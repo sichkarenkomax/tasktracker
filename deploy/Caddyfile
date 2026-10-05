@@ -1,0 +1,32 @@
+# Caddy is the single entry point: TLS, static frontend, API proxy.
+# Target address is provided via $SITE_ADDRESS (see .env.example).
+
+{$SITE_ADDRESS::80} {
+	log {
+		output stdout
+		format console
+	}
+
+	encode zstd gzip
+
+	# Everything the backend serves: versioned API plus health probes.
+	# A named matcher is required so that sub-paths such as /health/ready
+	# are routed to the app as well.
+	@backend path /api/* /health /health/*
+
+	handle @backend {
+		reverse_proxy app:8000
+	}
+
+	# Built SPA assets (including the history fallback).
+	handle {
+		reverse_proxy frontend:80
+	}
+
+	header {
+		X-Content-Type-Options nosniff
+		X-Frame-Options SAMEORIGIN
+		Referrer-Policy strict-origin-when-cross-origin
+		-Server
+	}
+}

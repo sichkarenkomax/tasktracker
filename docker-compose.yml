@@ -1,0 +1,95 @@
+# Target architecture: Caddy -> {static frontend, backend} -> PostgreSQL.
+# Redis, queues and workers are intentionally absent until they are needed.
+#
+#   docker compose up -d --build
+#
+# Application code is always built here. The production server never runs
+# `npm install` / `npm run build`.
+
+name: tasktracker
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-tasktracker}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-tasktracker}
+      POSTGRES_DB: ${POSTGRES_DB:-tasktracker}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U ${POSTGRES_USER:-tasktracker} -d ${POSTGRES_DB:-tasktracker}
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks:
+      - platform
+
+  app:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    environment:
+      APP_NAME: ${APP_NAME:-TaskTracker}
+      APP_ENV: ${APP_ENV:-production}
+      DEBUG: ${DEBUG:-false}
+      API_V1_PREFIX: ${API_V1_PREFIX:-/api/v1}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      LOG_JSON: ${LOG_JSON:-true}
+      CORS_ORIGINS: ${CORS_ORIGINS:-}
+      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://tasktracker:tasktracker@postgres:5432/tasktracker}
+      DB_ECHO: ${DB_ECHO:-false}
+      ENABLED_MODULES: ${ENABLED_MODULES:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request as r; r.urlopen('http://127.0.0.1:8000/health', timeout=3)"
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+    networks:
+      - platform
+
+  frontend:
+    build:
+      context: ./frontend
+    restart: unless-stopped
+    networks:
+      - platform
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:-:80}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - app
+      - frontend
+    networks:
+      - platform
+
+networks:
+  platform:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  caddy_data:
+  caddy_config:
