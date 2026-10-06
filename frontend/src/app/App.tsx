@@ -1,46 +1,60 @@
-import type { ReactNode } from 'react'
-import { BrowserRouter, Route, Routes } from 'react-router-dom'
+import { BrowserRouter, Outlet, Route, Routes } from 'react-router-dom'
 
+import { AuthProvider } from '../core/auth/AuthContext'
+import { RequireAuth } from '../core/auth/RequireAuth'
+import { OrganizationProvider } from '../core/organizations/OrganizationContext'
 import { AppShell } from '../core/layout/AppShell'
+import { LoginPage } from './pages/LoginPage'
+import { NotFoundPage } from './pages/NotFoundPage'
+import { ProjectPage } from './pages/ProjectPage'
+import { ProjectsPage } from './pages/ProjectsPage'
+import { SettingsPage } from './pages/SettingsPage'
 import { SystemPage } from './pages/SystemPage'
 import { WelcomePage } from './pages/WelcomePage'
+import { TaskDetailPage } from '../modules/tasks/pages/TaskDetailPage'
+import { TaskListPage } from '../modules/tasks/pages/TaskListPage'
 
 /**
- * Route table. Auth-protected pages arrive with Phase 1 (Users/Auth); on
- * Phase 0 the login route is still present so navigation does not change
- * shape later.
+ * The route table (section 29).
+ *
+ * Providers nest in the order their data depends on: the shell needs the session
+ * to decide what to render, and every authenticated page needs an organization to
+ * build a request, so `AuthProvider` wraps `OrganizationProvider`.
+ *
+ * The guard wraps a route *group* rather than each page, so a new page cannot
+ * accidentally ship unprotected by being added in the wrong place.
  */
-export function AppRoutes() {
-  return (
-    <AppShell>
-      <Routes>
-        <Route path="/" element={<WelcomePage />} />
-        <Route path="/login" element={<PlaceholderPage title="Login" />} />
-        <Route path="/projects" element={<PlaceholderPage title="Projects" />} />
-        <Route path="/projects/:projectId" element={<PlaceholderPage title="Project" />} />
-        <Route path="/projects/:projectId/tasks" element={<PlaceholderPage title="Tasks" />} />
-        <Route path="/tasks/:taskId" element={<PlaceholderPage title="Task" />} />
-        <Route path="/settings" element={<PlaceholderPage title="Settings" />} />
-        <Route path="/system" element={<SystemPage />} />
-        <Route path="*" element={<PlaceholderPage title="Not found" />} />
-      </Routes>
-    </AppShell>
-  )
-}
-
 export function App() {
   return (
     <BrowserRouter>
-      <AppRoutes />
-    </BrowserRouter>
-  )
-}
+      <AuthProvider>
+        <OrganizationProvider>
+          <AppShell>
+            <Routes>
+              <Route path="/" element={<WelcomePage />} />
+              <Route path="/login" element={<LoginPage />} />
+              <Route path="/system" element={<SystemPage />} />
 
-function PlaceholderPage({ title }: { title: ReactNode }) {
-  return (
-    <section>
-      <h1>{title}</h1>
-      <p>Not implemented yet — see docs/architecture.md (roadmap).</p>
-    </section>
+              <Route
+                element={
+                  <RequireAuth>
+                    <Outlet />
+                  </RequireAuth>
+                }
+              >
+                <Route path="/projects" element={<ProjectsPage />} />
+                <Route path="/projects/:projectId" element={<ProjectPage />} />
+                <Route path="/projects/:projectId/tasks" element={<TaskListPage />} />
+                <Route path="/tasks" element={<TaskListPage />} />
+                <Route path="/tasks/:taskId" element={<TaskDetailPage />} />
+                <Route path="/settings" element={<SettingsPage />} />
+              </Route>
+
+              <Route path="*" element={<NotFoundPage />} />
+            </Routes>
+          </AppShell>
+        </OrganizationProvider>
+      </AuthProvider>
+    </BrowserRouter>
   )
 }
