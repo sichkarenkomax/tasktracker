@@ -1,0 +1,32 @@
+# Throwaway PostgreSQL for `make test`. It is deliberately a separate stack from
+# docker-compose.yml: tests truncate tables and must never touch real data, and
+# the production compose file keeps PostgreSQL off the host network.
+#
+#   make test-up     # start
+#   make test        # run the suite against it
+#   make test-down   # stop and discard
+#
+# The explicit project name keeps the test container out of the main stack's
+# namespace: otherwise every `docker compose up` reports it as an orphan and
+# invites an `--remove-orphans` that would delete the database mid-run.
+name: tasktracker-test
+
+services:
+  postgres-test:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: tasktracker
+      POSTGRES_PASSWORD: tasktracker
+      POSTGRES_DB: tasktracker_test
+    ports:
+      # Not 5432: the default is already taken on most developer machines.
+      - "${TEST_DB_PORT:-55432}:5432"
+    # tmpfs keeps the data directory out of the Docker volume store, so
+    # `make test-down` really does throw everything away.
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tasktracker -d tasktracker_test"]
+      interval: 3s
+      timeout: 3s
+      retries: 20

@@ -1,0 +1,101 @@
+"""Pydantic schemas for tasks and comments."""
+
+from __future__ import annotations
+
+from datetime import date, datetime
+from uuid import UUID
+
+from pydantic import BaseModel, ConfigDict, Field
+
+from app.modules.tasks.models import TaskPriority, TaskStatus
+from app.modules.tasks.repository import DEFAULT_SORT, SORTABLE
+
+
+#: Unknown fields are rejected rather than dropped. Pydantic's default is to
+#: ignore them, which turns a typo - or a client assuming ``status`` may be set
+#: on create - into a request that reports success and quietly does nothing. The
+#: same reasoning that rejects an unknown ``?sort=`` applies to the body.
+class WriteModel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
+class TaskCreate(WriteModel):
+    title: str = Field(min_length=1, max_length=300)
+    description: str | None = Field(default=None, max_length=20_000)
+    priority: TaskPriority | None = None
+    due_date: date | None = None
+    assignee_id: UUID | None = None
+
+
+class TaskUpdate(WriteModel):
+    """Every field is optional; omitted means "leave as it is".
+
+    ``due_date`` needs the sentinel: sending ``null`` must clear the deadline,
+    while omitting the key must not. ``model_fields_set`` carries that
+    distinction from the router into the service.
+    """
+
+    title: str | None = Field(default=None, min_length=1, max_length=300)
+    description: str | None = Field(default=None, max_length=20_000)
+    priority: TaskPriority | None = None
+    due_date: date | None = None
+    assignee_id: UUID | None = None
+    status: TaskStatus | None = None
+
+
+class TaskRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    organization_id: UUID
+    project_id: UUID
+    title: str
+    description: str | None
+    status: TaskStatus
+    priority: TaskPriority
+    assignee_id: UUID | None
+    creator_id: UUID
+    due_date: date | None
+    completed_at: datetime | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class TaskPage(BaseModel):
+    """Envelope matching the Activity feed, so the SPA handles one shape."""
+
+    items: list[TaskRead]
+    total: int
+    limit: int
+    offset: int
+    sort: str
+    direction: str
+
+
+class CommentCreate(WriteModel):
+    content: str = Field(min_length=1, max_length=10_000)
+
+
+class CommentRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    task_id: UUID
+    author_id: UUID
+    content: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class CommentPage(BaseModel):
+    items: list[CommentRead]
+    total: int
+    limit: int
+    offset: int
+
+
+#: Exposed so the API layer can reject an unknown sort field with 422 instead of
+#: silently falling back - a silently ignored `?sort=priorty` is a bug report
+#: nobody can reproduce.
+SORT_FIELDS: frozenset[str] = SORTABLE
+DEFAULT_SORT_FIELD: str = DEFAULT_SORT

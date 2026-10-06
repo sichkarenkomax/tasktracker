@@ -73,6 +73,37 @@ def discover_modules(package: str = DEFAULT_PACKAGE) -> list[ModuleBundle]:
     return bundles
 
 
+def import_module_packages(package: str = DEFAULT_PACKAGE) -> list[str]:
+    """Import every module package without reading its manifest.
+
+    Alembic autogenerate needs module-owned models registered on
+    ``Base.metadata`` even for modules that are disabled at runtime, so this is
+    deliberately separate from :func:`discover_modules`.
+    """
+    try:
+        root = importlib.import_module(package)
+    except ModuleNotFoundError:
+        logger.warning("modules.import_skipped package=%s reason=not_found", package)
+        return []
+
+    locations = getattr(root, "__path__", None)
+    if locations is None:  # pragma: no cover - defensive
+        return []
+
+    imported: list[str] = []
+    for module_info in sorted(pkgutil.iter_modules(locations), key=lambda info: info.name):
+        if module_info.name.startswith("_"):
+            continue
+        module_path = f"{package}.{module_info.name}"
+        try:
+            importlib.import_module(module_path)
+        except Exception:  # pragma: no cover - a broken module must not kill boot
+            logger.exception("modules.import_failed module=%s", module_path)
+            continue
+        imported.append(module_path)
+    return imported
+
+
 def _load_module(module_path: str) -> ModuleBundle | None:
     try:
         importlib.import_module(module_path)

@@ -20,15 +20,24 @@ from alembic import context
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-# E402 is not reported for imports that follow sys.path manipulation.
-import app.modules  # noqa: F401 - imported so autogenerate sees full metadata
+# Import every model so that autogenerate sees the full metadata.
+import app.database.models  # noqa: F401
 from app.config import get_settings
+from app.core.modules.registry import import_module_packages
 from app.database.base import Base
+
+# Module-owned models must be registered too, even for modules that are
+# disabled at runtime (docs/architecture.md, section 46).
+import_module_packages()
 
 config = context.config
 
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    # Alembic is a guest in the application's logging setup. The default
+    # disable_existing_loggers=True would silence every logger that already
+    # exists, which is invisible in production (migrations run in their own
+    # process) but breaks in-process callers such as the test suite.
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 # `%` is an interpolation marker in configparser - escape it.
 config.set_main_option(

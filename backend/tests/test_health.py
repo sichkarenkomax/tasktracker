@@ -1,11 +1,13 @@
 from __future__ import annotations
 
-from fastapi.testclient import TestClient
+from typing import Any
+
+from httpx import AsyncClient
 
 
 class TestHealth:
-    def test_liveness_is_dependency_free(self, client: TestClient) -> None:
-        response = client.get("/health")
+    async def test_liveness_is_dependency_free(self, client: AsyncClient) -> None:
+        response = await client.get("/health")
 
         assert response.status_code == 200
         body = response.json()
@@ -15,20 +17,31 @@ class TestHealth:
 
 
 class TestReadiness:
-    def test_reports_ready_when_database_is_up(self, client: TestClient, monkeypatch) -> None:
+    async def test_reports_ready_when_database_is_up(
+        self, client: AsyncClient, monkeypatch: Any
+    ) -> None:
         monkeypatch.setattr("app.api.health.check_database", _database_up)
 
-        response = client.get("/health/ready")
+        response = await client.get("/health/ready")
 
         assert response.status_code == 200
         body = response.json()
         assert body["status"] == "ready"
         assert body["checks"]["database"]["status"] == "up"
 
-    def test_returns_503_when_database_is_down(self, client: TestClient, monkeypatch) -> None:
+    async def test_reports_ready_against_a_real_database(self, client: AsyncClient) -> None:
+        """No stubbing: the migrated test database is actually reachable."""
+        response = await client.get("/health/ready")
+
+        assert response.status_code == 200
+        assert response.json()["checks"]["database"]["status"] == "up"
+
+    async def test_returns_503_when_database_is_down(
+        self, client: AsyncClient, monkeypatch: Any
+    ) -> None:
         monkeypatch.setattr("app.api.health.check_database", _database_down)
 
-        response = client.get("/health/ready")
+        response = await client.get("/health/ready")
 
         assert response.status_code == 503
         assert response.json()["status"] == "not_ready"

@@ -1,6 +1,10 @@
 """Tasks module.
 
-Phase 0 registers the module so that the registry, dependency resolution and
-permission/event declaration are exercised end to end. Models, repository,
-services and API land in Phase 2.
+The first functional module of the platform (docs/architecture.md, section 13).
+Layout follows section 64: ``models`` -> ``schemas`` -> ``repository`` ->
+``service`` -> ``api``, plus ``manifest``, ``permissions`` and ``events``.
+
+Nothing here is imported by ``app.core``: the module reaches the platform
+through Core's services and the event bus, which is what allows it to be
+disabled by ``ENABLED_MODULES`` without touching the platform itself.
 """

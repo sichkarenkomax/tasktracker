@@ -107,3 +107,69 @@ class TestEventBus:
 
         bus.clear()
         assert bus.subscription_count == 0
+
+
+class TestDeferredDispatch:
+    """Events must reach handlers only after the transaction has committed.
+
+    Dispatching earlier deadlocks the request: a handler that inserts an
+    activity row referencing a just-created organization waits for that
+    transaction's foreign key, while the transaction waits for the handler.
+    """
+
+    async def test_buffered_event_is_withheld_until_flush(self) -> None:
+        bus = EventBus()
+        received: list[str] = []
+        bus.subscribe_all(lambda event: received.append(event.name))
+
+        buffer = bus.start_buffer()
+        await bus.publish_event("task.created", payload={"task_id": "1"})
+
+        assert received == []
+
+        await bus.flush_buffer(buffer)
+
+        assert received == ["task.created"]
+
+    async def test_order_is_preserved(self) -> None:
+        bus = EventBus()
+        received: list[str] = []
+        bus.subscribe_all(lambda event: received.append(event.name))
+
+        buffer = bus.start_buffer()
+        for name in ("task.created", "task.updated", "task.deleted"):
+            await bus.publish_event(name)
+        await bus.flush_buffer(buffer)
+
+        assert received == ["task.created", "task.updated", "task.deleted"]
+
+    async def test_discarded_events_never_reach_handlers(self) -> None:
+        bus = EventBus()
+        received: list[str] = []
+        bus.subscribe_all(lambda event: received.append(event.name))
+
+        buffer = bus.start_buffer()
+        await bus.publish_event("task.created")
+        bus.discard_buffer(buffer)
+
+        assert received == []
+
+    async def test_a_new_buffer_starts_empty_after_a_flush(self) -> None:
+        """A leaked buffer would make the next request replay stale history."""
+        bus = EventBus()
+        received: list[str] = []
+        bus.subscribe_all(lambda event: received.append(event.name))
+
+        await bus.flush_buffer(bus.start_buffer())
+        await bus.publish_event("task.created")
+
+        assert received == ["task.created"]
+
+    async def test_publishing_without_a_buffer_stays_immediate(self) -> None:
+        bus = EventBus()
+        received: list[str] = []
+        bus.subscribe_all(lambda event: received.append(event.name))
+
+        await bus.publish_event("task.created")
+
+        assert received == ["task.created"]

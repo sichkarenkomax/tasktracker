@@ -16,6 +16,22 @@ jobs:
     defaults:
       run:
         working-directory: backend
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: tasktracker
+          POSTGRES_PASSWORD: tasktracker
+          POSTGRES_DB: tasktracker_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U tasktracker -d tasktracker_test"
+          --health-interval 3s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      TEST_DATABASE_URL: postgresql+asyncpg://tasktracker:tasktracker@localhost:5432/tasktracker_test
     steps:
       - uses: actions/checkout@v4
 
@@ -36,8 +52,35 @@ jobs:
       - name: Type check (mypy)
         run: mypy app
 
+      # scripts/ lives outside the backend package but ships with the product:
+      # e2e.py is the acceptance harness and wait_for.py is what the quick start
+      # tells newcomers to run, so neither may rot unnoticed.
+      - name: Lint and type check (scripts)
+        run: |
+          ruff check ../scripts --config pyproject.toml
+          ruff format --check ../scripts --config pyproject.toml
+          mypy ../scripts --config-file pyproject.toml
+
       - name: Tests (pytest)
         run: pytest -q
+
+      - name: Migrations apply cleanly from scratch
+        env:
+          DATABASE_URL: postgresql+asyncpg://tasktracker:tasktracker@localhost:5432/tasktracker_migrations
+        run: |
+          psql "postgresql://tasktracker:tasktracker@localhost:5432/postgres" \
+            -c "CREATE DATABASE tasktracker_migrations"
+          alembic upgrade head
+          alembic downgrade base
+
+      - name: Models and migrations agree
+        env:
+          DATABASE_URL: postgresql+asyncpg://tasktracker:tasktracker@localhost:5432/tasktracker_migrations
+        # Fails when a model changed without a matching migration, which is
+        # otherwise only discovered in production.
+        run: |
+          alembic upgrade head
+          alembic check
 
   frontend:
     name: Frontend (typecheck, build)
@@ -71,6 +114,9 @@ jobs:
 
       - name: Validate docker-compose.yml
         run: docker compose config --quiet
+
+      - name: Validate docker-compose.test.yml
+        run: docker compose -f docker-compose.test.yml config --quiet
 
   images:
     name: Docker images

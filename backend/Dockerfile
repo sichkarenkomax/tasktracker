@@ -22,6 +22,12 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 RUN useradd --create-home --uid 10001 appuser
 WORKDIR /srv/app
 
+# Writable home for runtime state, currently the generated JWT signing key.
+# Docker seeds a fresh named volume from this directory, including its owner -
+# without the chown the mounted volume would be root-owned and the non-root
+# process could not write to it.
+RUN mkdir -p /var/lib/tasktracker && chown appuser:appuser /var/lib/tasktracker
+
 COPY --from=builder /opt/venv /opt/venv
 COPY --chown=appuser:appuser app ./app
 COPY --chown=appuser:appuser alembic.ini pyproject.toml ./

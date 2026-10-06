@@ -14,7 +14,11 @@ from app.core.modules.manager import (
     RegisteredModule,
 )
 from app.core.modules.manifest import MODULE_ID_PATTERN, ModuleManifest
-from app.core.modules.registry import ModuleBundle, discover_modules
+from app.core.modules.registry import (
+    ModuleBundle,
+    discover_modules,
+    import_module_packages,
+)
 
 __all__ = [
     "MODULE_ID_PATTERN",
@@ -26,4 +30,5 @@ __all__ = [
     "ModuleState",
     "RegisteredModule",
     "discover_modules",
+    "import_module_packages",
 ]

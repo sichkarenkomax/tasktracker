@@ -7,6 +7,7 @@ development and production. Values are read once and cached.
 from __future__ import annotations
 
 from functools import lru_cache
+from pathlib import Path
 from typing import Literal
 
 from pydantic import model_validator
@@ -36,6 +37,9 @@ class Settings(BaseSettings):
     app_env: AppEnv = "development"
     debug: bool = False
     api_v1_prefix: str = "/api/v1"
+    #: Interactive API documentation at /api/docs. Turn off to stop describing
+    #: the whole surface to anyone who can reach the port.
+    api_docs_enabled: bool = True
 
     # --- Logging -----------------------------------------------------------
     log_level: str = "INFO"
@@ -54,8 +58,11 @@ class Settings(BaseSettings):
     enabled_modules: str = ""
 
     # --- Security ----------------------------------------------------------
-    #: Signs JWT access tokens. MUST be overridden in production.
+    #: Signs JWT access tokens. Generated and persisted on first start when left
+    #: at the placeholder (see app.config.secret_key).
     secret_key: str = INSECURE_DEFAULT_SECRET
+    #: Where an auto-generated key is kept. Must live on a persistent volume.
+    secret_key_file: Path = Path("/var/lib/tasktracker/secret_key")
     jwt_algorithm: str = "HS256"
     access_token_ttl_minutes: int = 60 * 24
     #: Issued as an httpOnly cookie in addition to the JSON body, so the SPA
@@ -87,7 +94,8 @@ class Settings(BaseSettings):
 
     @property
     def uses_insecure_secret(self) -> bool:
-        return self.secret_key == INSECURE_DEFAULT_SECRET
+        """True when no real signing key is configured (unset or placeholder)."""
+        return not self.secret_key or self.secret_key == INSECURE_DEFAULT_SECRET
 
     @property
     def registration_open(self) -> bool:
@@ -101,13 +109,33 @@ class Settings(BaseSettings):
             raise ValueError("AUTH_COOKIE_SAMESITE=none requires AUTH_COOKIE_SECURE=true")
         return self
 
+    def resolve_secret_key(self) -> None:
+        """Adopt a persisted or freshly generated signing key.
+
+        An empty ``SECRET_KEY`` counts as unset: an empty string is a perfectly
+        valid HMAC key, which is exactly why it must never reach the signer.
+        """
+        if not self.uses_insecure_secret:
+            return
+        from app.config.secret_key import load_or_create_secret_key
+
+        self.secret_key, _ = load_or_create_secret_key(
+            secret_key=self.secret_key, secret_key_file=self.secret_key_file
+        )
+
     def validate_runtime(self) -> None:
-        """Fail fast on insecure production configuration."""
-        if self.is_production and self.uses_insecure_secret:
+        """Resolve the signing key, then fail fast if it is still unusable.
+
+        ``resolve_secret_key`` either returns a strong key or raises, so the check
+        below is a backstop rather than the primary guard.
+        """
+        self.resolve_secret_key()
+        if self.uses_insecure_secret:  # pragma: no cover - defensive
             raise RuntimeError(
-                "SECRET_KEY still holds the development placeholder. Generate a random "
-                "value (for example: python -c \"import secrets; "
-                "print(secrets.token_urlsafe(48))\") and set it in the environment."
+                "SECRET_KEY is empty or still the development placeholder and could not be "
+                "persisted. Generate a random value (for example: python -c "
+                '"import secrets; print(secrets.token_urlsafe(48))") and set it in the '
+                "environment."
             )
 
 
