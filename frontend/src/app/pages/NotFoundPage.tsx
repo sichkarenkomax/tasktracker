@@ -1,22 +1,22 @@
 import { Link } from 'react-router-dom'
 
+import { useI18n } from '../../core/i18n'
+
 export function NotFoundPage() {
+  const { t } = useI18n()
   return (
     <section>
-      <h1>Page not found</h1>
-      <p className="muted">
-        That address does not match anything in TaskTracker. It may have been renamed, or the link
-        may belong to a different installation.
-      </p>
+      <h1>{t('app.notFound')}</h1>
+      <p className="muted">{t('app.notFoundBody')}</p>
       <ul>
         <li>
-          <Link to="/projects">Projects</Link>
+          <Link to="/projects">{t('nav.projects')}</Link>
         </li>
         <li>
-          <Link to="/tasks">All tasks</Link>
+          <Link to="/tasks">{t('nav.allTasks')}</Link>
         </li>
         <li>
-          <Link to="/">Start here</Link>
+          <Link to="/">{t('app.goHome')}</Link>
         </li>
       </ul>
     </section>

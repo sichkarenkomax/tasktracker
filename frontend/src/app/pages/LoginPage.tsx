@@ -3,6 +3,7 @@ import { Link, Navigate, useLocation } from 'react-router-dom'
 
 import { ApiError } from '../../core/api/client'
 import { useAuth } from '../../core/auth/AuthContext'
+import { useI18n } from '../../core/i18n'
 
 /**
  * Sign in and sign up on one screen.
@@ -18,6 +19,7 @@ interface LocationState {
 }
 
 export function LoginPage() {
+  const { t } = useI18n()
   const { status, signIn, signUp } = useAuth()
   const location = useLocation()
   const [mode, setMode] = useState<Mode>('signin')
@@ -36,12 +38,12 @@ export function LoginPage() {
 
   function readable(cause: unknown): string {
     if (cause instanceof ApiError && cause.code === 'invalid_credentials') {
-      return 'That email, username or password is not right.'
+      return t('auth.invalidCredentials')
     }
     if (cause instanceof ApiError && cause.isValidation) {
       return cause.detail
     }
-    return cause instanceof Error ? cause.message : 'Sign in failed'
+    return cause instanceof Error ? cause.message : t('error.generic')
   }
 
   async function submit(event: React.FormEvent) {
@@ -68,10 +70,8 @@ export function LoginPage() {
 
   return (
     <section className="auth">
-      <h1>{mode === 'signin' ? 'Sign in' : 'Create an account'}</h1>
-      <p className="muted">
-        TaskTracker is self-hosted: the first account becomes the owner of its own organization.
-      </p>
+      <h1>{mode === 'signin' ? t('auth.signInTitle') : t('auth.signUp')}</h1>
+      <p className="muted">{t('auth.intro')}</p>
 
       <div className="tabs" role="tablist">
         <button
@@ -84,7 +84,7 @@ export function LoginPage() {
             setError(null)
           }}
         >
-          Sign in
+          {t('auth.signIn')}
         </button>
         <button
           type="button"
@@ -96,14 +96,14 @@ export function LoginPage() {
             setError(null)
           }}
         >
-          Sign up
+          {t('auth.signUp')}
         </button>
       </div>
 
       <form className="auth__form" onSubmit={submit}>
         {mode === 'signin' ? (
           <label>
-            <span>Email or username</span>
+            <span>{t('auth.emailOrUsername')}</span>
             <input
               autoFocus
               autoComplete="username"
@@ -115,7 +115,7 @@ export function LoginPage() {
         ) : (
           <>
             <label>
-              <span>Email</span>
+              <span>{t('auth.email')}</span>
               <input
                 autoFocus
                 type="email"
@@ -126,7 +126,7 @@ export function LoginPage() {
               />
             </label>
             <label>
-              <span>Username</span>
+              <span>{t('auth.username')}</span>
               <input
                 autoComplete="username"
                 required
@@ -135,10 +135,10 @@ export function LoginPage() {
                 value={username}
                 onChange={(event) => setUsername(event.target.value)}
               />
-              <small className="muted">Letters, digits, dot, dash and underscore.</small>
+              <small className="muted">{t('auth.usernameHint')}</small>
             </label>
             <label>
-              <span>First name</span>
+              <span>{t('auth.firstName')}</span>
               <input
                 autoComplete="given-name"
                 value={firstName}
@@ -149,7 +149,7 @@ export function LoginPage() {
         )}
 
         <label>
-          <span>Password</span>
+          <span>{t('auth.password')}</span>
           <input
             type="password"
             autoComplete={mode === 'signin' ? 'current-password' : 'new-password'}
@@ -158,7 +158,7 @@ export function LoginPage() {
             value={password}
             onChange={(event) => setPassword(event.target.value)}
           />
-          {mode === 'signup' ? <small className="muted">At least 8 characters.</small> : null}
+          {mode === 'signup' ? <small className="muted">{t('auth.passwordHint')}</small> : null}
         </label>
 
         {error ? (
@@ -168,12 +168,16 @@ export function LoginPage() {
         ) : null}
 
         <button type="submit" className="button button--primary" disabled={pending}>
-          {pending ? 'Please wait...' : mode === 'signin' ? 'Sign in' : 'Create account'}
+          {pending
+            ? t('app.loading')
+            : mode === 'signin'
+              ? t('auth.signIn')
+              : t('auth.createAccount')}
         </button>
       </form>
 
       <p className="muted">
-        <Link to="/">Back to the start</Link>
+        <Link to="/">{t('app.goHome')}</Link>
       </p>
     </section>
   )

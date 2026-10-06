@@ -15,7 +15,8 @@ export type TaskPriority = (typeof TASK_PRIORITIES)[number]
 export interface Task {
   id: string
   organization_id: string
-  project_id: string
+  /** `null` means the task is not filed under a project - the inbox. */
+  project_id: string | null
   title: string
   description: string | null
   status: TaskStatus
@@ -77,16 +78,18 @@ export interface TaskCreate {
   priority?: TaskPriority | null
   due_date?: string | null
   assignee_id?: string | null
+  /** Only used by the flat `createUnfiled`; the project route takes it from the URL. */
+  project_id?: string | null
 }
 
 /**
  * A partial task update.
  *
- * `due_date` and `description` are declared as `?: string | null` rather than
- * `?: string` on purpose: the API distinguishes "key omitted" from "key set to
- * null" (section 13), and `JSON.stringify` drops undefined keys, so leaving a
+ * `due_date`, `description` and `project_id` are declared as `?: string | null`
+ * rather than `?: string` on purpose: the API distinguishes "key omitted" from
+ * "key set to null", and `JSON.stringify` drops undefined keys, so leaving a
  * field undefined clears nothing while passing null clears it. Getting this
- * backwards silently deletes a deadline.
+ * backwards silently deletes a deadline or files a task back into the inbox.
  */
 export interface TaskUpdate {
   title?: string
@@ -95,13 +98,17 @@ export interface TaskUpdate {
   due_date?: string | null
   assignee_id?: string | null
   status?: TaskStatus | null
+  project_id?: string | null
 }
 
 export interface TaskFilters {
   status?: TaskStatus[]
   priority?: TaskPriority[]
+  project_id?: string
   assignee_id?: string
   unassigned?: boolean
+  /** Only tasks not filed under any project. */
+  unfiled?: boolean
   overdue?: boolean
   search?: string
   sort?: string
@@ -116,3 +123,5 @@ export const TERMINAL_STATUSES: readonly TaskStatus[] = ['done']
 export function isDone(status: TaskStatus): boolean {
   return TERMINAL_STATUSES.includes(status)
 }
+
+export type { TranslationKey } from '../../../core/i18n'

@@ -25,6 +25,10 @@ class TaskCreate(WriteModel):
     priority: TaskPriority | None = None
     due_date: date | None = None
     assignee_id: UUID | None = None
+    #: Only meaningful on the flat ``POST /tasks``. The nested route takes the
+    #: project from its path, so sending it there is a 422 rather than a value
+    #: that silently disagrees with the URL.
+    project_id: UUID | None = None
 
 
 class TaskUpdate(WriteModel):
@@ -41,6 +45,9 @@ class TaskUpdate(WriteModel):
     due_date: date | None = None
     assignee_id: UUID | None = None
     status: TaskStatus | None = None
+    #: Lets a task be filed under a project, or moved to another one, without a
+    #: separate endpoint. ``null`` takes it back out to the inbox.
+    project_id: UUID | None = None
 
 
 class TaskRead(BaseModel):
@@ -48,7 +55,8 @@ class TaskRead(BaseModel):
 
     id: UUID
     organization_id: UUID
-    project_id: UUID
+    #: ``None`` means the task is not filed under a project.
+    project_id: UUID | None
     title: str
     description: str | None
     status: TaskStatus

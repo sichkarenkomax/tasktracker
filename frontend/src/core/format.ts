@@ -4,27 +4,31 @@
  * All of it is locale-aware through `Intl`, and every helper tolerates the empty
  * case: a task without a deadline must render as a dash, not as "Invalid Date",
  * which is what `new Date(null).toLocaleDateString()` produces.
+ *
+ * The helpers take `t` rather than importing it, because a component that is not
+ * inside the provider - a unit test, a storybook - can then pass its own stub
+ * instead of failing on a missing context.
  */
+import type { Translate } from './i18n'
 
 const DATE_FORMAT: Intl.DateTimeFormatOptions = { year: 'numeric', month: 'short', day: 'numeric' }
-const DATE_TIME_FORMAT: Intl.DateTimeFormatOptions = {
-  dateStyle: 'medium',
-  timeStyle: 'short',
-}
+const DATE_TIME_FORMAT: Intl.DateTimeFormatOptions = { dateStyle: 'medium', timeStyle: 'short' }
 
 export const EMPTY = '—'
 
 /** A `YYYY-MM-DD` string, rendered as a date and never shifted by a timezone. */
-export function formatDate(value: string | null | undefined): string {
+export function formatDate(value: string | null | undefined, locale?: string): string {
   if (!value) return EMPTY
   const parsed = new Date(`${value}T00:00:00`)
-  return Number.isNaN(parsed.getTime()) ? EMPTY : parsed.toLocaleDateString(undefined, DATE_FORMAT)
+  if (Number.isNaN(parsed.getTime())) return EMPTY
+  return parsed.toLocaleDateString(locale, DATE_FORMAT)
 }
 
-export function formatDateTime(value: string | null | undefined): string {
+export function formatDateTime(value: string | null | undefined, locale?: string): string {
   if (!value) return EMPTY
   const parsed = new Date(value)
-  return Number.isNaN(parsed.getTime()) ? EMPTY : parsed.toLocaleString(undefined, DATE_TIME_FORMAT)
+  if (Number.isNaN(parsed.getTime())) return EMPTY
+  return parsed.toLocaleString(locale, DATE_TIME_FORMAT)
 }
 
 /** Whole days from today; negative means the date has passed. */
@@ -38,21 +42,24 @@ export function daysUntil(value: string | null | undefined): number | null {
 }
 
 /**
- * A deadline in words, because "3 days overdue" is the thing a person needs and
- * a bare date makes them do the arithmetic.
+ * A deadline in words, because "3 days overdue" is the thing a person needs and a
+ * bare date makes them do the arithmetic themselves.
  */
-export function describeDueDate(value: string | null | undefined): string | null {
+export function describeDueDate(
+  value: string | null | undefined,
+  t: Translate,
+): string | null {
   const days = daysUntil(value)
   if (days === null) return null
-  if (days === 0) return 'today'
-  if (days === 1) return 'tomorrow'
-  if (days === -1) return 'yesterday'
-  if (days < 0) return `${Math.abs(days)} days overdue`
-  if (days <= 7) return `in ${days} days`
+  if (days === 0) return t('due.today')
+  if (days === 1) return t('due.tomorrow')
+  if (days === -1) return t('due.yesterday')
+  if (days < 0) return t('due.overdue', { count: Math.abs(days) })
+  if (days <= 7) return t('due.inDays', { count: days })
   return null
 }
 
-/** "3 comments" / "1 comment", so the plural is not hardcoded twice. */
+/** "3 comments" / "1 comment", so the plural rule is not hardcoded twice. */
 export function plural(count: number, one: string, many = `${one}s`): string {
   return `${count} ${count === 1 ? one : many}`
 }

@@ -111,6 +111,7 @@ def _filters(
     priority: list[TaskPriority] | None = None,
     assignee_id: UUID | None = None,
     unassigned: bool = False,
+    unfiled: bool = False,
     creator_id: UUID | None = None,
     due_from: date | None = None,
     due_to: date | None = None,
@@ -124,6 +125,7 @@ def _filters(
         priority=tuple(priority or ()),
         assignee_id=assignee_id,
         unassigned=unassigned,
+        unfiled=unfiled,
         creator_id=creator_id,
         due_from=due_from,
         due_to=due_to,
@@ -171,6 +173,7 @@ async def list_tasks(
     priority: list[TaskPriority] | None = Query(default=None),
     assignee_id: UUID | None = None,
     unassigned: bool = False,
+    unfiled: bool = False,
     creator_id: UUID | None = None,
     due_from: date | None = None,
     due_to: date | None = None,
@@ -189,6 +192,7 @@ async def list_tasks(
             priority=priority,
             assignee_id=assignee_id,
             unassigned=unassigned,
+            unfiled=unfiled,
             creator_id=creator_id,
             due_from=due_from,
             due_to=due_to,
@@ -199,6 +203,47 @@ async def list_tasks(
         sort,
         direction,
     )
+
+
+@router.post(
+    "/tasks",
+    response_model=TaskRead,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create a task, optionally filed under a project",
+)
+async def create_task(
+    organization_id: UUID,
+    payload: TaskCreate,
+    user: CurrentUser,
+    session: SessionDep,
+    bus: EventBusDep,
+) -> TaskRead:
+    """The flat form of create, for a task that belongs to the organization but to
+    no project yet.
+
+    Section 30 lists the task list as the home screen, and an inbox nobody can put
+    anything into until they have first created a project is not an inbox.
+    ``project_id`` is optional here; when it is given it is validated exactly as
+    the nested route validates it, so the flat form is not a way around tenant
+    isolation.
+    """
+    await _authorize(session, user, organization_id, task_permissions.CREATE)
+    project_id = payload.project_id
+    if project_id is not None:
+        await _load_project(session, project_id, organization_id)
+    await _validate_assignee(session, organization_id, payload.assignee_id)
+    task = await TaskService(TaskRepository(session), bus).create(
+        organization_id=organization_id,
+        project_id=project_id,
+        creator=user,
+        title=payload.title,
+        description=payload.description,
+        priority=payload.priority,
+        due_date=payload.due_date,
+        assignee_id=payload.assignee_id,
+    )
+    await session.commit()
+    return TaskRead.model_validate(task)
 
 
 @router.get(
@@ -268,6 +313,14 @@ async def create_project_task(
     project = await _load_project(session, project_id, organization_id)
     await _authorize(session, user, organization_id, task_permissions.CREATE)
     await _validate_assignee(session, organization_id, payload.assignee_id)
+    if payload.project_id is not None and payload.project_id != project.id:
+        # The path is the authority here. Accepting a body that disagrees would
+        # mean two sources of truth for one field, and the loser would be
+        # whichever the caller was not looking at.
+        raise ValidationError(
+            "project_id is taken from the path; remove it from the body",
+            details={"field": "project_id"},
+        )
 
     task = await TaskService(TaskRepository(session), bus).create(
         organization_id=project.organization_id,
@@ -327,6 +380,13 @@ async def update_task(
         await _authorize(session, user, organization_id, task_permissions.ASSIGN)
         await _validate_assignee(session, organization_id, payload.assignee_id)
 
+    # Moving a task between projects needs the same right as editing it, but the
+    # target project has to exist inside this organization - otherwise a task
+    # could be filed into another tenant's project by guessing its id.
+    refiling = "project_id" in payload.model_fields_set
+    if refiling and payload.project_id is not None:
+        await _load_project(session, payload.project_id, organization_id)
+
     service = TaskService(TaskRepository(session), bus)
     if reassigning:
         await service.assign(task, actor=user, assignee_id=payload.assignee_id)
@@ -340,6 +400,8 @@ async def update_task(
         due_date=payload.due_date,
         due_date_set="due_date" in payload.model_fields_set,
         status=payload.status,
+        project_id=payload.project_id,
+        project_id_set=refiling,
     )
     await session.commit()
     return TaskRead.model_validate(updated)

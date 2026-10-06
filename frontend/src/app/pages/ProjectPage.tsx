@@ -2,8 +2,11 @@ import { Link, useParams } from 'react-router-dom'
 
 import { formatDateTime } from '../../core/format'
 import { useAsync } from '../../core/hooks/useAsync'
+import { useI18n } from '../../core/i18n'
 import { organizationsApi } from '../../core/organizations/api'
+import type { Member } from '../../core/organizations/api'
 import { useOrganization } from '../../core/organizations/OrganizationContext'
+import { RequiresOrganization } from '../../core/organizations/RequiresOrganization'
 import { useCapabilities } from '../../core/permissions/capabilities'
 import { projectsApi } from '../../core/projects/api'
 import { activityApi } from '../../modules/tasks/api'
@@ -13,10 +16,19 @@ import { ActivityFeed } from '../../modules/tasks/components/ActivityFeed'
  * One project: what it is, and the way into its tasks.
  *
  * A separate page from the task list on purpose - §29 lists both routes, and a
- * project that has grown a description, a team and a history deserves more than a
- * link in a list.
+ * project that has grown a description and a history deserves more than a link in
+ * a list.
  */
 export function ProjectPage() {
+  return (
+    <RequiresOrganization>
+      <Project />
+    </RequiresOrganization>
+  )
+}
+
+function Project() {
+  const { t } = useI18n()
   const { projectId } = useParams<{ projectId: string }>()
   const { current: organization } = useOrganization()
   const organizationId = organization?.id ?? null
@@ -30,48 +42,45 @@ export function ProjectPage() {
     [organizationId, projectId],
   )
 
-  const members = useAsync(
+  const roster = useAsync(
     () =>
-      organizationId
-        ? organizationsApi.members(organizationId)
-        : Promise.resolve([]),
+      organizationId ? organizationsApi.members(organizationId) : Promise.resolve([] as Member[]),
     [organizationId],
   )
 
   const activity = useAsync(
     () =>
-      organizationId && projectId
+      organizationId
         ? activityApi.forOrganization(organizationId, 20)
         : Promise.resolve({ items: [], total: 0, limit: 0, offset: 0 }),
-    [organizationId, projectId],
+    [organizationId],
   )
 
-  const rosterNames = new Map(
-    (members.data ?? []).map((member) => [member.user_id, member.first_name || member.username]),
-  )
-
-  if (!organization) return <p className="notice">Loading...</p>
+  if (!organizationId) return null
 
   if (project.error) {
     return (
       <section>
-        <h1>Project</h1>
+        <h1>{t('projects.title')}</h1>
         <p className="notice notice--error">{project.error}</p>
         <p>
-          <Link to="/projects">Back to projects</Link>
+          <Link to="/projects">{t('projects.backToProjects')}</Link>
         </p>
       </section>
     )
   }
 
-  if (!project.data) return <p className="notice">Loading project...</p>
+  if (!project.data) return <p className="notice">{t('app.loading')}</p>
 
   const current = project.data
+  const actorNames = new Map(
+    (roster.data ?? []).map((member) => [member.user_id, member.first_name || member.username]),
+  )
 
   return (
     <section>
       <nav className="breadcrumb">
-        <Link to="/projects">Projects</Link>
+        <Link to="/projects">{t('projects.title')}</Link>
         <span aria-hidden="true"> / </span>
         <span>{current.name}</span>
       </nav>
@@ -85,26 +94,26 @@ export function ProjectPage() {
 
       <p className="card__actions">
         <Link to={`/projects/${current.id}/tasks`}>
-          {capabilities.canCreateTask ? 'Open task list' : 'View tasks'}
+          {capabilities.canCreateTask ? t('projects.openTaskList') : t('projects.viewTasks')}
         </Link>
-        <Link to="/tasks">All organization tasks</Link>
+        <Link to="/tasks">{t('projects.allOrganizationTasks')}</Link>
       </p>
 
       <section className="panel">
-        <h2>Details</h2>
+        <h2>{t('tasks.details')}</h2>
         <dl className="meta">
-          <dt>Created</dt>
+          <dt>{t('app.createdAt')}</dt>
           <dd>{formatDateTime(current.created_at)}</dd>
-          <dt>Updated</dt>
+          <dt>{t('app.updatedAt')}</dt>
           <dd>{formatDateTime(current.updated_at)}</dd>
-          <dt>Team</dt>
-          <dd>{(members.data ?? []).length} organization members</dd>
+          <dt>{t('nav.organization')}</dt>
+          <dd>{t('projects.organizationMembers', { count: (roster.data ?? []).length })}</dd>
         </dl>
       </section>
 
       <section className="panel">
-        <h2>Recent activity</h2>
-        <ActivityFeed items={activity.data?.items ?? []} actorNames={rosterNames} />
+        <h2>{t('activity.recent')}</h2>
+        <ActivityFeed items={activity.data?.items ?? []} actorNames={actorNames} />
       </section>
     </section>
   )

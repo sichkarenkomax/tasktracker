@@ -1,33 +1,34 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 
-import { daysUntil, formatDateTime, plural } from '../../../core/format'
+import { daysUntil, formatDateTime } from '../../../core/format'
 import { useAsync, useMutation } from '../../../core/hooks/useAsync'
-import { useCapabilities } from '../../../core/permissions/capabilities'
+import { useI18n } from '../../../core/i18n'
 import { organizationsApi } from '../../../core/organizations/api'
 import type { Member } from '../../../core/organizations/api'
 import { useOrganization } from '../../../core/organizations/OrganizationContext'
+import { RequiresOrganization } from '../../../core/organizations/RequiresOrganization'
+import { useCapabilities } from '../../../core/permissions/capabilities'
 import { projectsApi } from '../../../core/projects/api'
+import type { Project } from '../../../core/projects/api'
 import { activityApi, tasksApi } from '../api'
 import { ActivityFeed } from '../components/ActivityFeed'
 import {
   DueDateBadge,
-  PRIORITY_OPTIONS,
   PriorityBadge,
-  STATUS_OPTIONS,
   StatusBadge,
+  useTaskVocabulary,
 } from '../components/Badges'
 import { CommentThread } from '../components/CommentThread'
-import { TaskDateField } from '../components/TaskDateField'
-import { TaskFieldSelect } from '../components/TaskFieldSelect'
+import { TaskDateField, TaskFieldSelect } from '../components/TaskFieldSelect'
 import { isDone } from '../types'
 import type { Comment, Task, TaskPriority, TaskStatus, TaskUpdate } from '../types'
 
 const EMPTY_PAGE = { items: [] as Comment[], total: 0, limit: 0, offset: 0 }
 
 /**
- * Task details (section 31): title, description, the four fields, then comments
- * and activity.
+ * Task details (section 31): title, description, the fields, then comments and
+ * activity.
  *
  * Every field commits on its own, so a half-finished change to the title never
  * blocks fixing a deadline. Each mutation reloads from the server rather than
@@ -35,11 +36,21 @@ const EMPTY_PAGE = { items: [] as Comment[], total: 0, limit: 0, offset: 0 }
  * business rule, and only the server's version is guaranteed to be true.
  */
 export function TaskDetailPage() {
+  return (
+    <RequiresOrganization>
+      <TaskDetail />
+    </RequiresOrganization>
+  )
+}
+
+function TaskDetail() {
+  const { t } = useI18n()
   const { taskId } = useParams<{ taskId: string }>()
   const navigate = useNavigate()
   const { current: organization } = useOrganization()
   const organizationId = organization?.id ?? null
   const capabilities = useCapabilities(organizationId)
+  const { statusOptions, priorityOptions } = useTaskVocabulary()
 
   const task = useAsync(
     () =>
@@ -49,19 +60,13 @@ export function TaskDetailPage() {
     [organizationId, taskId],
   )
 
-  const project = useAsync(
-    () =>
-      organizationId && task.data
-        ? projectsApi.get(task.data.project_id, organizationId)
-        : Promise.resolve(null),
-    [organizationId, task.data?.project_id],
+  const roster = useAsync(
+    () => (organizationId ? organizationsApi.members(organizationId) : Promise.resolve([] as Member[])),
+    [organizationId],
   )
 
-  const roster = useAsync(
-    () =>
-      organizationId
-        ? organizationsApi.members(organizationId)
-        : Promise.resolve([] as Member[]),
+  const projects = useAsync(
+    () => (organizationId ? projectsApi.list(organizationId) : Promise.resolve([] as Project[])),
     [organizationId],
   )
 
@@ -94,7 +99,7 @@ export function TaskDetailPage() {
   })
 
   /**
-   * The fields edit through `patch.runOrThrow`, because each control restores its
+   * The fields edit through `runOrThrow`, because each control restores its own
    * previous value when a save is refused: a rejected status change must not leave
    * the select claiming the task moved when it did not.
    */
@@ -120,47 +125,46 @@ export function TaskDetailPage() {
     activity.reload()
   })
 
-  if (!organization) return <p className="notice">Loading...</p>
+  if (!organizationId) return null
 
   if (task.error) {
     return (
       <section>
-        <h1>Task</h1>
+        <h1>{t('tasks.title')}</h1>
         <p className="notice notice--error">{task.error}</p>
         <p>
-          <Link to="/projects">Back to projects</Link>
+          <Link to="/projects">{t('projects.backToProjects')}</Link>
         </p>
       </section>
     )
   }
 
-  if (!task.data) return <p className="notice">Loading task...</p>
+  if (!task.data) return <p className="notice">{t('app.loading')}</p>
 
   const current = task.data
   const overdue = !isDone(current.status) && (daysUntil(current.due_date) ?? 1) < 0
   const members = roster.data ?? []
-  const rosterNames = new Map(members.map((member) => [member.user_id, member.first_name || member.username]))
-  const commentCount = comments.data?.total ?? 0
+  const projectList = projects.data ?? []
+  const canEdit = capabilities.canEditTask
+  const actorNames = new Map(
+    members.map((member) => [member.user_id, member.first_name || member.username]),
+  )
 
   return (
-    <section>
+    <section className="narrow-wide">
       <nav className="breadcrumb">
-        <Link to="/projects">Projects</Link>
+        <Link to="/projects">{t('projects.title')}</Link>
         <span aria-hidden="true"> / </span>
-        {project.data ? (
-          <Link to={`/projects/${current.project_id}/tasks`}>{project.data.name}</Link>
-        ) : (
-          <span>Project</span>
-        )}
+        <Link to={`/projects/${current.project_id ?? ''}/tasks`}>{t('projects.tasks')}</Link>
         <span aria-hidden="true"> / </span>
-        <span>Task</span>
+        <span>{t('tasks.title')}</span>
       </nav>
 
       <header className="page-header">
         <h1>
           <TaskTitleEditor
             value={current.title}
-            disabled={!capabilities.canEditTask}
+            disabled={!canEdit}
             onCommit={(title) => commitField({ title })}
           />
         </h1>
@@ -172,40 +176,48 @@ export function TaskDetailPage() {
       </header>
 
       <section className="panel">
-        <h2>Details</h2>
+        <h2>{t('tasks.details')}</h2>
         <div className="fields">
           <TaskFieldSelect<TaskStatus>
-            label="Status"
+            label={t('tasks.status')}
             value={current.status}
-            options={STATUS_OPTIONS}
+            options={statusOptions}
             emptyLabel=""
-            disabled={!capabilities.canEditTask}
+            disabled={!canEdit}
             onCommit={(next) => commitField({ status: next })}
           />
           <TaskFieldSelect<TaskPriority>
-            label="Priority"
+            label={t('tasks.priority')}
             value={current.priority}
-            options={PRIORITY_OPTIONS}
-            emptyLabel="Default"
-            disabled={!capabilities.canEditTask}
+            options={priorityOptions}
+            emptyLabel=""
+            disabled={!canEdit}
             onCommit={(next) => commitField({ priority: next })}
           />
           <TaskFieldSelect<string>
-            label="Assignee"
+            label={t('tasks.assignee')}
             value={current.assignee_id}
             options={members.map((member) => ({
               value: member.user_id,
               label: member.first_name || member.username,
             }))}
-            emptyLabel="Unassigned"
-            disabled={!capabilities.canEditTask}
+            emptyLabel={t('tasks.unassigned')}
+            disabled={!canEdit}
             onCommit={(next) => commitField({ assignee_id: next })}
           />
           <TaskDateField
-            label="Due date"
+            label={t('tasks.dueDate')}
             value={current.due_date}
-            disabled={!capabilities.canEditTask}
+            disabled={!canEdit}
             onCommit={(next) => commitField({ due_date: next })}
+          />
+          <TaskFieldSelect<string>
+            label={t('columns.column.project')}
+            value={current.project_id}
+            options={projectList.map((project) => ({ value: project.id, label: project.name }))}
+            emptyLabel={t('tasks.noProject')}
+            disabled={!canEdit}
+            onCommit={(next) => commitField({ project_id: next })}
           />
         </div>
         {patch.error ? (
@@ -214,18 +226,18 @@ export function TaskDetailPage() {
           </p>
         ) : null}
         <dl className="meta">
-          <dt>Created</dt>
+          <dt>{t('app.createdAt')}</dt>
           <dd>{formatDateTime(current.created_at)}</dd>
-          <dt>Completed</dt>
-          <dd>{current.completed_at ? formatDateTime(current.completed_at) : 'Not completed'}</dd>
+          <dt>{t('app.completedAt')}</dt>
+          <dd>{current.completed_at ? formatDateTime(current.completed_at) : t('tasks.notCompleted')}</dd>
         </dl>
       </section>
 
       <section className="panel">
-        <h2>Description</h2>
+        <h2>{t('tasks.description')}</h2>
         <DescriptionEditor
           value={current.description}
-          disabled={!capabilities.canEditTask}
+          disabled={!canEdit}
           onSave={(value) => commitField({ description: value })}
         />
       </section>
@@ -240,8 +252,8 @@ export function TaskDetailPage() {
       />
 
       <section className="panel">
-        <h2>Activity</h2>
-        <ActivityFeed items={activity.data?.items ?? []} actorNames={rosterNames} />
+        <h2>{t('activity.title')}</h2>
+        <ActivityFeed items={activity.data?.items ?? []} actorNames={actorNames} />
       </section>
 
       {capabilities.canDeleteTask ? (
@@ -256,11 +268,15 @@ export function TaskDetailPage() {
             className="button button--danger"
             disabled={removeTask.pending}
             onClick={() => {
-              const warning = `Delete "${current.title}" and its ${plural(commentCount, 'comment')}?`
+              const count = comments.data?.total ?? 0
+              const warning = t('tasks.deleteTaskConfirm', {
+                title: current.title,
+                comments: `${count} ${count === 1 ? t('pagination.task') : t('pagination.tasks')}`,
+              })
               if (window.confirm(warning)) void removeTask.run()
             }}
           >
-            Delete task
+            {t('tasks.deleteTask')}
           </button>
         </footer>
       ) : null}
@@ -277,9 +293,12 @@ function TaskTitleEditor({
   disabled?: boolean
   onCommit: (title: string) => Promise<void>
 }) {
+  const { t } = useI18n()
   const [draft, setDraft] = useState(value)
   const [error, setError] = useState<string | null>(null)
   const [editing, setEditing] = useState(false)
+
+  useEffect(() => setDraft(value), [value])
 
   if (disabled || !editing) {
     return (
@@ -310,7 +329,7 @@ function TaskTitleEditor({
         onBlur={() => {
           const trimmed = draft.trim()
           if (!trimmed) {
-            setError('A task needs a title.')
+            setError(t('tasks.titleRequired'))
             return
           }
           setError(null)
@@ -320,7 +339,7 @@ function TaskTitleEditor({
             // Stay open on a rejected title, so the new text is not lost.
             setDraft(trimmed)
             setEditing(true)
-            setError(cause instanceof Error ? cause.message : 'Could not save')
+            setError(cause instanceof Error ? cause.message : t('error.generic'))
           })
         }}
       />
@@ -342,21 +361,20 @@ function DescriptionEditor({
   disabled?: boolean
   onSave: (value: string | null) => Promise<void>
 }) {
+  const { t } = useI18n()
   const [draft, setDraft] = useState(value ?? '')
   const [dirty, setDirty] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [pending, setPending] = useState(false)
 
-  // A save that failed leaves the editor open with the text still there: closing
-  // it would throw away the words the person just wrote.
-  useEffect(() => {
-    if (value !== null) setDraft(value)
-  }, [value])
+  // A save that succeeded leaves the editor open until the server value arrives,
+  // so keep in step with it rather than with the previous value.
+  useEffect(() => setDraft(value ?? ''), [value])
 
   if (disabled || !dirty) {
     return (
       <div>
-        <p className={value ? 'description' : 'muted'}>{value || 'No description yet.'}</p>
+        <p className={value ? 'description' : 'muted'}>{value || t('tasks.noDescription')}</p>
         {!disabled ? (
           <button
             type="button"
@@ -367,7 +385,7 @@ function DescriptionEditor({
               setDirty(true)
             }}
           >
-            {value ? 'Edit' : 'Add a description'}
+            {value ? t('app.edit') : t('tasks.addDescription')}
           </button>
         ) : null}
       </div>
@@ -384,7 +402,8 @@ function DescriptionEditor({
           await onSave(draft.trim() || null)
           setDirty(false)
         } catch (cause: unknown) {
-          setError(cause instanceof Error ? cause.message : 'Could not save')
+          // Stay open: closing would throw away the words just written.
+          setError(cause instanceof Error ? cause.message : t('error.generic'))
         } finally {
           setPending(false)
         }
@@ -399,7 +418,7 @@ function DescriptionEditor({
       />
       <div className="create-form__actions">
         <button type="submit" className="button button--primary" disabled={pending}>
-          {pending ? 'Saving...' : 'Save'}
+          {pending ? t('app.saving') : t('app.save')}
         </button>
         <button
           type="button"
@@ -411,7 +430,7 @@ function DescriptionEditor({
             setDirty(false)
           }}
         >
-          Cancel
+          {t('app.cancel')}
         </button>
       </div>
       {error ? (

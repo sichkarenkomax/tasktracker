@@ -9,11 +9,11 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import Select, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.users.models import User
-from app.database.helpers import count, fetch_one
+from app.database.helpers import count, fetch_all, fetch_one
 
 
 class UserRepository:
@@ -44,3 +44,33 @@ class UserRepository:
     async def count(self) -> int:
         statement = select(func.count()).select_from(User)
         return await count(self._session, statement)
+
+    async def search(
+        self,
+        *,
+        term: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[User]:
+        """Every account, newest first, optionally narrowed by a search term.
+
+        This is the portal administrator's view. It is deliberately the only
+        cross-tenant read of the ``users`` table in the codebase, and
+        ``users.api`` guards it behind ``is_superuser`` - ordinary people browse
+        each other through an organization's member list instead.
+        """
+        statement: Select[tuple[User]] = select(User)
+        if term:
+            # ILIKE rather than a trigram index: the administration list is a
+            # page of fifty, not a search box somebody types into per keystroke.
+            needle = f"%{term.strip()}%"
+            statement = statement.where(
+                or_(
+                    User.email.ilike(needle),
+                    User.username.ilike(needle),
+                    User.first_name.ilike(needle),
+                    User.last_name.ilike(needle),
+                )
+            )
+        statement = statement.order_by(User.created_at.desc()).limit(limit).offset(offset)
+        return await fetch_all(self._session, statement)

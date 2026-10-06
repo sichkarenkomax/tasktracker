@@ -11,6 +11,7 @@ matters.
 
 from __future__ import annotations
 
+import asyncio
 import os
 import uuid
 from collections.abc import AsyncIterator, Iterator
@@ -39,6 +40,7 @@ import pytest  # noqa: E402
 from asgi_lifespan import LifespanManager  # noqa: E402
 from httpx import ASGITransport, AsyncClient  # noqa: E402
 from sqlalchemy import text  # noqa: E402
+from sqlalchemy.ext.asyncio import create_async_engine  # noqa: E402
 
 from app.core.organizations.schemas import slugify  # noqa: E402
 from app.database.base import Base  # noqa: E402
@@ -86,7 +88,36 @@ def migrated_database() -> Iterator[None]:
     try:
         yield
     finally:
+        # Empty the tables before rolling back. A migration whose downgrade
+        # refuses to lose data - the one that makes `project_id` nullable again
+        # cannot cope with unfiled tasks - would otherwise fail the suite on the
+        # last test's leftovers rather than on anything the test actually did.
+        _empty_database()
         command.downgrade(config, "base")
+
+
+def _empty_database() -> None:
+    """Truncate every table, on an event loop of our own.
+
+    Alembic runs on its own loop and this fixture is synchronous, so the truncate
+    cannot borrow the one pytest-asyncio holds. It gets a throwaway engine rather
+    than the shared one: a connection pooled on the shared engine would then be
+    left bound to a loop that closes at the end of ``asyncio.run``, and the next
+    user of that pool would fail with "Event loop is closed".
+    """
+
+    async def run() -> None:
+        scratch = create_async_engine(TEST_DATABASE_URL)
+        try:
+            table_names = sorted(Base.metadata.tables)
+            if table_names:
+                quoted = ", ".join(f'"{name}"' for name in table_names)
+                async with scratch.begin() as connection:
+                    await connection.execute(text(f"TRUNCATE {quoted} CASCADE"))
+        finally:
+            await scratch.dispose()
+
+    asyncio.run(run())
 
 
 @pytest.fixture(autouse=True)

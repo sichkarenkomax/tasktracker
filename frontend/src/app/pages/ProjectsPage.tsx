@@ -1,31 +1,42 @@
 import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 
 import { useAsync, useMutation } from '../../core/hooks/useAsync'
+import { useI18n } from '../../core/i18n'
+import { Icon } from '../../core/layout/Icon'
 import { organizationsApi } from '../../core/organizations/api'
 import type { Member } from '../../core/organizations/api'
-import { useOrganization, rememberOrganization } from '../../core/organizations/OrganizationContext'
+import { useOrganization } from '../../core/organizations/OrganizationContext'
+import { RequiresOrganization } from '../../core/organizations/RequiresOrganization'
 import { useCapabilities } from '../../core/permissions/capabilities'
 import { projectsApi } from '../../core/projects/api'
 import type { Project } from '../../core/projects/api'
-import { ActivityFeed } from '../../modules/tasks/components/ActivityFeed'
 import { activityApi } from '../../modules/tasks/api'
+import { ActivityFeed } from '../../modules/tasks/components/ActivityFeed'
 
 /**
- * Projects, and the front door of the whole product (section 29).
+ * Projects, and the front door of the product (section 29).
  *
- * A new account has no organization, so the empty state offers to create one
- * rather than showing a list of nothing with no way forward.
+ * A new account has no organization, so the gate above handles that case; this
+ * page only ever sees somebody who has one.
  */
 export function ProjectsPage() {
-  const navigate = useNavigate()
-  const { current: organization, organizations, loading, reload } = useOrganization()
+  return (
+    <RequiresOrganization>
+      <Projects />
+    </RequiresOrganization>
+  )
+}
+
+function Projects() {
+  const { t } = useI18n()
+  const { current: organization } = useOrganization()
   const organizationId = organization?.id ?? null
   const capabilities = useCapabilities(organizationId)
+  const [name, setName] = useState('')
 
   const projects = useAsync(
-    () =>
-      organizationId ? projectsApi.list(organizationId) : Promise.resolve([] as Project[]),
+    () => (organizationId ? projectsApi.list(organizationId) : Promise.resolve([] as Project[])),
     [organizationId],
   )
 
@@ -37,117 +48,71 @@ export function ProjectsPage() {
     [organizationId],
   )
 
-  const members = useAsync(
-    () =>
-      organizationId ? organizationsApi.members(organizationId) : Promise.resolve([] as Member[]),
+  const roster = useAsync(
+    () => (organizationId ? organizationsApi.members(organizationId) : Promise.resolve([] as Member[])),
     [organizationId],
   )
 
-  const [projectName, setProjectName] = useState('')
-  const createProject = useMutation<string, Project>(async (name) => {
-    if (!organizationId) throw new Error('No organization selected')
-    return projectsApi.create(organizationId, name)
+  const create = useMutation<string, Project>(async (value) => {
+    if (!organizationId) throw new Error(t('error.generic'))
+    return projectsApi.create(organizationId, value)
   })
 
-  const [orgName, setOrgName] = useState('')
-  const createOrganization = useMutation<string, void>(async (name) => {
-    const created = await organizationsApi.create(name)
-    setOrgName('')
-    // Record the intent, then let the provider adopt it when the list reloads.
-    // Selecting directly would blank the header for a frame, because the new
-    // organization is not in the old list yet.
-    rememberOrganization(created.id)
-    reload()
-  })
+  if (!organizationId) return null
 
-  if (loading) return <p className="notice">Loading...</p>
-
-  if (!organization) {
-    return (
-      <section className="onboarding">
-        <h1>Welcome</h1>
-        <p>You are not a member of any organization yet. Create one to get started.</p>
-        <form
-          className="onboarding__form"
-          onSubmit={async (event) => {
-            event.preventDefault()
-            await createOrganization.run(orgName.trim())
-          }}
-        >
-          <label>
-            <span>Organization name</span>
-            <input
-              autoFocus
-              required
-              value={orgName}
-              placeholder="Acme Inc"
-              onChange={(event) => setOrgName(event.target.value)}
-            />
-          </label>
-          <button type="submit" className="button button--primary" disabled={createOrganization.pending}>
-            {createOrganization.pending ? 'Creating...' : 'Create organization'}
-          </button>
-          {createOrganization.error ? (
-            <p className="notice notice--error" role="alert">
-              {createOrganization.error}
-            </p>
-          ) : null}
-        </form>
-      </section>
-    )
-  }
+  const actorNames = new Map(
+    (roster.data ?? []).map((member) => [
+      member.user_id,
+      member.first_name || member.username,
+    ]),
+  )
 
   return (
     <section>
       <header className="page-header">
-        <h1>Projects</h1>
+        <h1>{t('projects.title')}</h1>
         {capabilities.canCreateTask ? (
           <form
             className="inline-form"
             onSubmit={async (event) => {
               event.preventDefault()
-              const created = await createProject.run(projectName.trim())
-              if (created) {
-                setProjectName('')
-                navigate(`/projects/${created.id}/tasks`)
-              }
+              const trimmed = name.trim()
+              if (!trimmed) return
+              const created = await create.run(trimmed)
+              if (created !== null) setName('')
             }}
           >
             <label>
-              <span className="visually-hidden">New project name</span>
+              <span className="visually-hidden">{t('projects.new')}</span>
               <input
-                value={projectName}
-                placeholder="New project"
+                value={name}
+                placeholder={t('projects.new')}
                 maxLength={200}
-                onChange={(event) => setProjectName(event.target.value)}
+                onChange={(event) => setName(event.target.value)}
               />
             </label>
-            <button type="submit" className="button button--primary" disabled={createProject.pending}>
-              Create
+            <button type="submit" className="button button--primary" disabled={create.pending}>
+              <Icon name="plus" size={15} />
+              {t('app.create')}
             </button>
           </form>
         ) : null}
       </header>
 
-      {organizations.length > 1 ? (
-        <p className="muted">
-          Organization: <strong>{organization.name}</strong>
-        </p>
-      ) : null}
-
-      {createProject.error ? (
+      {create.error ? (
         <p className="notice notice--error" role="alert">
-          {createProject.error}
+          {create.error}
         </p>
       ) : null}
-      {projects.error ? <p className="notice notice--error">{projects.error}</p> : null}
-
-      {projects.loading && !projects.data ? <p className="notice">Loading projects...</p> : null}
+      {projects.error ? (
+        <p className="notice notice--error" role="alert">
+          {projects.error}
+        </p>
+      ) : null}
+      {projects.loading && !projects.data ? <p className="notice">{t('app.loading')}</p> : null}
 
       {projects.data && projects.data.length === 0 ? (
-        <p className="notice">
-          No projects yet. Create the first one above to start adding tasks.
-        </p>
+        <p className="notice">{t('projects.empty')}</p>
       ) : null}
 
       {projects.data && projects.data.length > 0 ? (
@@ -158,12 +123,12 @@ export function ProjectsPage() {
                 <Link to={`/projects/${project.id}`}>{project.name}</Link>
               </h2>
               {project.description ? <p>{project.description}</p> : null}
-              <p className="muted">
+              <p>
                 <span className={`badge badge--project-${project.status}`}>{project.status}</span>
               </p>
               <p className="card__actions">
-                <Link to={`/projects/${project.id}`}>Overview</Link>
-                <Link to={`/projects/${project.id}/tasks`}>Tasks</Link>
+                <Link to={`/projects/${project.id}`}>{t('projects.overview')}</Link>
+                <Link to={`/projects/${project.id}/tasks`}>{t('projects.tasks')}</Link>
               </p>
             </li>
           ))}
@@ -171,16 +136,8 @@ export function ProjectsPage() {
       ) : null}
 
       <section className="panel">
-        <h2>Recent activity</h2>
-        <ActivityFeed
-          items={activity.data?.items ?? []}
-          actorNames={new Map(
-            (members.data ?? []).map((member) => [
-              member.user_id,
-              member.first_name || member.username,
-            ]),
-          )}
-        />
+        <h2>{t('activity.recent')}</h2>
+        <ActivityFeed items={activity.data?.items ?? []} actorNames={actorNames} />
       </section>
     </section>
   )

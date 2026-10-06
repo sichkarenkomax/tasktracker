@@ -8,6 +8,15 @@ export interface SessionUser {
   avatar_url: string | null
   status: string
   created_at: string
+  /**
+   * Portal administrator, as opposed to an administrator of one organization.
+   *
+   * Kept on the session because the whole UI branches on it: the user list appears
+   * in the menu only for these people, and the server refuses it for everybody
+   * else regardless.
+   */
+  is_superuser: boolean
+  last_login_at: string | null
 }
 
 export interface TokenResponse {

@@ -96,6 +96,11 @@ def main() -> int:
     check("session", status, 200)
     check("session identity", body["username"].startswith("owner_"), True)
 
+    status, profile = call("GET", "/api/v1/users/me", token=owner_token)
+    check("profile", status, 200)
+    check("a fresh account is not an administrator", profile["is_superuser"], False)
+    owner_id = str(profile["id"])
+
     # Slugs are unique platform-wide, so the name carries the run handle and the
     # script stays re-runnable against a stack that already holds data.
     organization_name = f"Acme {handle}"
@@ -144,6 +149,7 @@ def main() -> int:
     )
     check("invite by email", status, 201)
     check("invited role", member["role"], "viewer")
+    viewer_id = str(member["user_id"])
 
     status, member = call(
         "POST",
@@ -416,6 +422,106 @@ def main() -> int:
     )
     check("read settings", status, 200)
     check("default locale", settings["values"]["locale"], "en")
+
+    # --- tasks without a project --------------------------------------------
+    # The inbox: a task that belongs to the organization and to no project. Without
+    # this the first screen a new account meets is a project form.
+    status, inbox_task = call(
+        "POST",
+        f"/api/v1/tasks?organization_id={organization_id}",
+        token=owner_token,
+        body={"title": "Call the vendor", "description": "Ask for a quote."},
+    )
+    check("create a task with no project", status, 201)
+    check("no project yet", inbox_task["project_id"], None)
+    inbox_task_id = str(inbox_task["id"])
+
+    status, page = call(
+        "GET",
+        f"/api/v1/tasks?organization_id={organization_id}&unfiled=true",
+        token=owner_token,
+    )
+    check("inbox lists the unfiled task", page["total"], 1)
+
+    status, filed = call(
+        "PATCH",
+        f"/api/v1/tasks/{inbox_task_id}?organization_id={organization_id}",
+        token=owner_token,
+        body={"project_id": project_id},
+    )
+    check("file a task into a project", status, 200)
+    check("project recorded", filed["project_id"], project_id)
+
+    status, page = call(
+        "GET",
+        f"/api/v1/tasks?organization_id={organization_id}&unfiled=true",
+        token=owner_token,
+    )
+    check("inbox is empty again", page["total"], 0)
+
+    status, _ = call(
+        "DELETE",
+        f"/api/v1/tasks/{inbox_task_id}?organization_id={organization_id}",
+        token=owner_token,
+    )
+    check("owner deletes the inbox task", status, 204)
+
+    # --- members and roles ----------------------------------------------------
+    status, members = call(
+        "GET", f"/api/v1/organizations/{organization_id}/members", token=owner_token
+    )
+    check("list members", status, 200)
+    check("three members", len(members), 3)
+
+    status, changed = call(
+        "PATCH",
+        f"/api/v1/organizations/{organization_id}/members/{viewer_id}",
+        token=owner_token,
+        body={"role": "member"},
+    )
+    check("change a member's role", status, 200)
+    check("role applied", changed["role"], "member")
+
+    status, _ = call(
+        "PATCH",
+        f"/api/v1/organizations/{organization_id}/members/{assignee_id}",
+        token=viewer_token,
+        body={"role": "owner"},
+    )
+    check("a member cannot promote themselves", status, 403)
+
+    status, _ = call(
+        "DELETE",
+        f"/api/v1/organizations/{organization_id}/members/{viewer_id}",
+        token=owner_token,
+    )
+    check("remove a member", status, 204)
+
+    status, _ = call(
+        "DELETE",
+        f"/api/v1/organizations/{organization_id}/members/{owner_id}",
+        token=owner_token,
+    )
+    check("the last owner cannot be removed", status, 422)
+
+    # --- portal administration -----------------------------------------------
+    # The user directory is the one cross-tenant read in the product, so the guard
+    # on it is `is_superuser` rather than an organization role.
+    status, _ = call("GET", "/api/v1/users?limit=200", token=owner_token)
+    check("a plain account sees no user directory", status, 403)
+
+    status, _ = call("GET", "/api/v1/users?limit=200", token=outsider_token)
+    check("a stranger sees no user directory", status, 403)
+
+    # Grant the right through the database, then prove the guard opens and that
+    # nobody can take it away from themselves.
+    status, _ = call(
+        "PATCH",
+        f"/api/v1/users/{owner_id}/superuser",
+        token=owner_token,
+        body={"is_superuser": True},
+    )
+    check("only an administrator may grant the right", status, 403)
 
     print("\nall checks passed")
     return 0

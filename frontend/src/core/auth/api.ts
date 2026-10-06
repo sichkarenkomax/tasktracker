@@ -27,6 +27,12 @@ export const authApi = {
   },
 
   me() {
-    return api.get<SessionUser>('/auth/me')
+    // `/users/me` rather than `/auth/me`: only the former carries `is_superuser`,
+    // and the whole menu branches on that flag.
+    return api.get<SessionUser>('/users/me')
+  },
+
+  updateProfile(body: { first_name: string; last_name: string }) {
+    return api.patch<SessionUser>('/users/me', body)
   },
 }

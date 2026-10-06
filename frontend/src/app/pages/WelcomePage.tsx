@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom'
 
 import { useAuth } from '../../core/auth/AuthContext'
+import { useI18n } from '../../core/i18n'
 
 /**
  * The public landing page.
@@ -10,37 +11,35 @@ import { useAuth } from '../../core/auth/AuthContext'
  * time.
  */
 export function WelcomePage() {
+  const { t } = useI18n()
   const { status } = useAuth()
 
   return (
     <section className="landing">
-      <h1>TaskTracker</h1>
-      <p>
-        A self-hosted platform for managing work. Organizations hold projects, projects hold tasks,
-        and every change is written to an activity feed your team can read back.
-      </p>
+      <h1>{t('app.name')}</h1>
+      <p>{t('app.tagline')}</p>
 
       {status === 'authenticated' ? (
         <p>
           <Link className="button button--primary" to="/projects">
-            Go to your projects
+            {t('nav.projects')}
           </Link>
         </p>
       ) : (
         <p>
           <Link className="button button--primary" to="/login">
-            Sign in or create an account
+            {t('auth.signIn')}
           </Link>
         </p>
       )}
 
-      <h2>What works today</h2>
+      <h2>{t('projects.title')}</h2>
       <ul>
-        <li>Accounts, organizations and roles: owner, admin, member, viewer.</li>
-        <li>Projects, teams and comments.</li>
-        <li>Tasks with status, priority, assignee and deadline.</li>
-        <li>Search, filtering and sorting over the task list.</li>
-        <li>An activity feed for every organization and every task.</li>
+        <li>{t('nav.projects')}</li>
+        <li>{t('nav.allTasks')}</li>
+        <li>{t('nav.members')}</li>
+        <li>{t('comments.title')}</li>
+        <li>{t('activity.title')}</li>
       </ul>
     </section>
   )

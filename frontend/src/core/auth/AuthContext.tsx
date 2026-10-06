@@ -8,8 +8,8 @@ import type { SessionUser } from './types'
 /**
  * The session, as the SPA knows it.
  *
- * There is no token in here on purpose. The API issues an httpOnly cookie, so
- * the browser attaches the session to every request and no script - ours or an
+ * There is no token in here on purpose. The API issues an httpOnly cookie, so the
+ * browser attaches the session to every request and no script - ours or an
  * attacker's - can read it. What React keeps is only the user record, used to
  * render the header.
  *
@@ -67,16 +67,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const signIn = useCallback(async (login: string, password: string) => {
-    const response = await authApi.login({ login, password })
-    setUser(response.user)
+    // The login response carries the summary shape - no `is_superuser`, no
+    // `last_login_at` - so the profile is fetched as well. Registering and signing
+    // in then leave the session record in exactly the same state.
+    await authApi.login({ login, password })
+    setUser(await authApi.me())
     setError(null)
     setStatus('authenticated')
   }, [])
 
   const signUp = useCallback(
     async (input: { email: string; username: string; password: string; first_name?: string }) => {
-      const response = await authApi.register(input)
-      setUser(response.user)
+      await authApi.register(input)
+      setUser(await authApi.me())
       setError(null)
       setStatus('authenticated')
     },

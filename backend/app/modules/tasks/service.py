@@ -53,7 +53,7 @@ class TaskService:
         self,
         *,
         organization_id: UUID,
-        project_id: UUID,
+        project_id: UUID | None,
         creator: User,
         title: str,
         description: str | None = None,
@@ -111,6 +111,8 @@ class TaskService:
         due_date: date | None = None,
         due_date_set: bool = False,
         status: TaskStatus | None = None,
+        project_id: UUID | None = None,
+        project_id_set: bool = False,
     ) -> Task:
         """Apply a partial update, publishing one event per kind of change.
 
@@ -133,6 +135,12 @@ class TaskService:
         if description_set and description != task.description:
             task.description = description
             changed.append("description")
+
+        # Filing a task under a project, or taking it back out to the inbox, is
+        # the same field and the same nullable question.
+        if project_id_set and project_id != task.project_id:
+            task.project_id = project_id
+            changed.append("project")
 
         if due_date_set and due_date != task.due_date:
             task.due_date = due_date

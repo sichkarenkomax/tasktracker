@@ -2,9 +2,10 @@ import { useCallback, useMemo } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 
 import { useAsync, useMutation } from '../../../core/hooks/useAsync'
+import { useI18n } from '../../../core/i18n'
 import { organizationsApi } from '../../../core/organizations/api'
-import type { Member } from '../../../core/organizations/api'
-import { useOrganization } from '../../../core/organizations/OrganizationContext'
+import { useOrganizationId } from '../../../core/organizations/OrganizationContext'
+import { RequiresOrganization } from '../../../core/organizations/RequiresOrganization'
 import { useCapabilities } from '../../../core/permissions/capabilities'
 import { projectsApi } from '../../../core/projects/api'
 import type { Project } from '../../../core/projects/api'
@@ -20,55 +21,53 @@ const PAGE_SIZE = 25
  * The task list (section 30).
  *
  * Reached two ways: `/projects/:projectId/tasks` narrows to one project, and
- * `/tasks` shows the whole organization. Both go through the same component
- * because the columns, filters and row actions are identical - only the API call
- * differs, and that is decided by whether a project id is in the route.
+ * `/tasks` shows the whole organization - including the inbox, the tasks that are
+ * not filed under any project at all. Both go through this component because the
+ * columns, filters and row actions are identical; only the API call differs, and
+ * that is decided by whether a project id is in the route.
  */
 export function TaskListPage() {
+  return (
+    <RequiresOrganization>
+      <TaskList />
+    </RequiresOrganization>
+  )
+}
+
+function TaskList() {
+  const { t } = useI18n()
   const { projectId } = useParams<{ projectId: string }>()
   const [searchParams, setSearchParams] = useSearchParams()
-  const { current: organization, loading: orgLoading } = useOrganization()
+  const organizationId = useOrganizationIdOrThrow()
+  const capabilities = useCapabilities(organizationId)
 
   const filters = useMemo(() => filtersFromSearch(searchParams.toString()), [searchParams])
   const offset = Number(searchParams.get('offset') ?? 0)
 
-  const organizationId = organization?.id ?? null
-  const capabilities = useCapabilities(organizationId)
-
   const page = useAsync(
     () => {
-      if (!organizationId) return Promise.resolve(null)
       const query: TaskFilters = { ...filters, limit: PAGE_SIZE, offset }
       return projectId
         ? tasksApi.listForProject(organizationId, projectId, query)
         : tasksApi.list(organizationId, query)
     },
-    [organizationId, projectId, searchParams.toString(), offset],
+    [organizationId, projectId, searchParams.toString()],
   )
 
   const members = useAsync(
-    () =>
-      organizationId ? organizationsApi.members(organizationId) : Promise.resolve([] as Member[]),
+    () => organizationsApi.members(organizationId),
     [organizationId],
   )
 
   const project = useAsync(
-    () =>
-      organizationId && projectId
-        ? projectsApi.get(projectId, organizationId)
-        : Promise.resolve(null),
+    () => (projectId ? projectsApi.get(projectId, organizationId) : Promise.resolve(null)),
     [organizationId, projectId],
   )
 
-  // The organization-wide list mixes projects, so each row needs its project's
-  // name. Fetched once per organization rather than per row: the list endpoint
-  // returns task ids, and one request per task to learn what it belongs to is
-  // how a 25-row page becomes 25 requests.
-  const allProjects = useAsync(
-    () =>
-      organizationId && !projectId
-        ? projectsApi.list(organizationId)
-        : Promise.resolve([] as Project[]),
+  // Needed twice on the organization-wide list: to file a new task, and to turn
+  // each row's project id into a name. One request, not one per row.
+  const projects = useAsync(
+    () => (projectId ? Promise.resolve([] as Project[]) : projectsApi.list(organizationId)),
     [organizationId, projectId],
   )
 
@@ -82,7 +81,6 @@ export function TaskListPage() {
   )
 
   const toggleDone = useMutation<Task, void>(async (task) => {
-    if (!organizationId) return
     await tasksApi.update(organizationId, task.id, {
       status: task.status === 'done' ? 'todo' : 'done',
     })
@@ -90,46 +88,47 @@ export function TaskListPage() {
   })
 
   const createTask = useMutation<TaskCreate, void>(async (input) => {
-    if (!organizationId || !projectId) return
-    await tasksApi.create(organizationId, projectId, input)
+    if (projectId) {
+      await tasksApi.create(organizationId, projectId, input)
+    } else {
+      await tasksApi.createUnfiled(organizationId, input)
+    }
     page.reload()
   })
 
-  if (orgLoading || !organization) {
-    return <p className="notice">Loading...</p>
-  }
+  const roster = members.data ?? []
 
-  if (projectId && !project.data) {
+  if (projectId && project.error) {
     return (
       <section>
-        <h1>Project</h1>
-        {project.error ? <p className="notice notice--error">{project.error}</p> : null}
+        <h1>{t('projects.tasks')}</h1>
+        <p className="notice notice--error">{project.error}</p>
         <p>
-          <Link to="/projects">Back to projects</Link>
+          <Link to="/projects">{t('projects.backToProjects')}</Link>
         </p>
       </section>
     )
   }
 
-  const title = projectId ? (project.data?.name ?? 'Project') : 'All tasks'
-  const projectNames = new Map((allProjects.data ?? []).map((item) => [item.id, item.name]))
+  const title = projectId ? (project.data?.name ?? t('projects.tasks')) : t('tasks.allTasks')
 
   return (
     <section>
       <header className="page-header">
         <h1>{title}</h1>
-        {projectId ? (
-          <TaskCreateForm
-            members={members.data ?? []}
-            disabled={!capabilities.canCreateTask}
-            onCreate={(input) => createTask.runOrThrow(input)}
-          />
-        ) : null}
+        <TaskCreateForm
+          members={roster}
+          projects={projects.data ?? []}
+          projectId={projectId}
+          disabled={!capabilities.canCreateTask}
+          onCreate={(input) => createTask.runOrThrow(input)}
+        />
       </header>
 
       <TaskFilterBar
         value={filters}
-        members={members.data ?? []}
+        members={roster}
+        projects={projects.data ?? []}
         onChange={applyFilters}
       />
 
@@ -143,18 +142,17 @@ export function TaskListPage() {
           {createTask.error}
         </p>
       ) : null}
-
       {page.error ? <p className="notice notice--error">{page.error}</p> : null}
 
-      {page.loading && !page.data ? <p className="notice">Loading tasks...</p> : null}
+      {page.loading && !page.data ? <p className="notice">{t('tasks.loadingTasks')}</p> : null}
 
       {page.data ? (
         <>
           <TaskTable
             tasks={page.data.items}
-            members={members.data ?? []}
+            members={roster}
+            projects={projects.data ?? []}
             projectScoped={Boolean(projectId)}
-            projectNames={projectNames}
             onToggleDone={(task) => void toggleDone.run(task)}
           />
           <TaskPagination
@@ -171,4 +169,11 @@ export function TaskListPage() {
       ) : null}
     </section>
   )
+}
+
+/** Reached only inside `RequiresOrganization`, so the id is known to exist. */
+function useOrganizationIdOrThrow(): string {
+  const id = useOrganizationId()
+  if (id === null) throw new Error('TaskList rendered without an organization')
+  return id
 }

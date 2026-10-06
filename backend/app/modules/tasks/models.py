@@ -12,7 +12,7 @@ from datetime import date, datetime
 from enum import StrEnum
 from uuid import UUID
 
-from sqlalchemy import Date, DateTime, ForeignKey, Index, String, Text
+from sqlalchemy import Date, DateTime, ForeignKey, Index, String, Text, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import Uuid
 
@@ -78,10 +78,14 @@ class Task(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         ForeignKey("organizations.id", ondelete="CASCADE"),
         nullable=False,
     )
-    project_id: Mapped[UUID] = mapped_column(
+    #: NULL means the task is not filed under a project. Section 30 wants a task
+    #: list that is not a project list, and the inbox this product opens with -
+    #: "what do I have to do" - cannot answer that if every task must be filed
+    #: first. The organization is still required, so tenant isolation does not
+    #: depend on the project.
+    project_id: Mapped[UUID | None] = mapped_column(
         Uuid(as_uuid=True),
         ForeignKey("projects.id", ondelete="CASCADE"),
-        nullable=False,
     )
 
     title: Mapped[str] = mapped_column(String(300), nullable=False)
@@ -146,6 +150,15 @@ class Task(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             "description",
             postgresql_using="gin",
             postgresql_ops={"description": GIN_TRGM_OPS},
+        ),
+        # The inbox - "tasks of this organization with no project" - is what every
+        # page load asks for once project_id is nullable. A plain b-tree on a
+        # column that is NULL for all of those rows would be mostly dead weight,
+        # so the index only covers them.
+        Index(
+            "ix_tasks_organization_id_unfiled",
+            "organization_id",
+            postgresql_where=text("project_id IS NULL"),
         ),
     )
 

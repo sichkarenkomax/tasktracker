@@ -66,6 +66,21 @@ export const organizationsApi = {
       last_name: row.user?.last_name ?? null,
     }))
   },
+  addMember(id: string, email: string, role: OrganizationRole) {
+    return api.post<Membership>(`/organizations/${id}/members`, { email, role })
+  },
+  setMemberRole(id: string, userId: string, role: OrganizationRole) {
+    return api.patch<Membership>(`/organizations/${id}/members/${userId}`, { role })
+  },
+  removeMember(id: string, userId: string) {
+    return api.delete<void>(`/organizations/${id}/members/${userId}`)
+  },
+  update(id: string, body: { name?: string; description?: string | null }) {
+    return api.patch<Organization>(`/organizations/${id}`, body)
+  },
+  delete(id: string) {
+    return api.delete<void>(`/organizations/${id}`)
+  },
   settings(id: string) {
     return api.get<OrganizationSettings>(`/organizations/${id}/settings`)
   },

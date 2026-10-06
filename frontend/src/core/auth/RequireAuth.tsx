@@ -1,6 +1,7 @@
 import { Navigate, useLocation } from 'react-router-dom'
 import type { ReactElement } from 'react'
 
+import { useI18n } from '../i18n'
 import { useAuth } from './AuthContext'
 
 /**
@@ -11,17 +12,18 @@ import { useAuth } from './AuthContext'
  * form on every full page load.
  */
 export function RequireAuth({ children }: { children: ReactElement }) {
+  const { t } = useI18n()
   const { status } = useAuth()
   const location = useLocation()
 
   if (status === 'loading') {
-    return <p className="notice">Checking your session...</p>
+    return <p className="notice">{t('auth.checkingSession')}</p>
   }
 
   if (status === 'unreachable') {
     return (
       <p className="notice notice--error" role="alert">
-        The backend is unreachable. Start it with <code>docker compose up -d</code> and reload.
+        {t('auth.backendDown')}
       </p>
     )
   }

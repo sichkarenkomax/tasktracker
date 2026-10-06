@@ -3,10 +3,10 @@ import { useEffect, useState } from 'react'
 /**
  * A labelled select for one task field.
  *
- * Edits are committed on blur rather than on every keystroke: a select has no
- * intermediate state worth previewing, and firing a PATCH per change while
- * somebody is tabbing through the header would publish a `task.status_changed`
- * event per field they merely passed over.
+ * Edits are committed on change rather than on blur: there is no intermediate
+ * state in a select worth previewing, and firing a PATCH per hover while somebody
+ * tabs through the header would publish a `task.status_changed` per field they
+ * merely passed over.
  */
 export interface TaskFieldSelectProps<T extends string> {
   label: string
@@ -40,6 +40,7 @@ export function TaskFieldSelect<T extends string>({
     setDraft(next)
     const parsed = (next || null) as T | null
     if (parsed === value) return
+
     setPending(true)
     setError(null)
     try {
@@ -69,6 +70,68 @@ export function TaskFieldSelect<T extends string>({
           </option>
         ))}
       </select>
+      {error ? (
+        <span className="field__error" role="alert">
+          {error}
+        </span>
+      ) : null}
+    </label>
+  )
+}
+
+/**
+ * The deadline field.
+ *
+ * A plain date input rather than a datetime picker: a deadline has no time of
+ * day, and offering a time component invites people to believe in a precision the
+ * data model does not have.
+ */
+export function TaskDateField({
+  label,
+  value,
+  disabled,
+  onCommit,
+}: {
+  label: string
+  value: string | null
+  disabled?: boolean
+  onCommit: (next: string | null) => Promise<void>
+}) {
+  const [draft, setDraft] = useState(value ?? '')
+  const [error, setError] = useState<string | null>(null)
+  const [pending, setPending] = useState(false)
+
+  useEffect(() => {
+    setDraft(value ?? '')
+  }, [value])
+
+  async function commit(next: string) {
+    setDraft(next)
+    // An empty date input means "no deadline", which is null and not "".
+    const parsed = next === '' ? null : next
+    if (parsed === value) return
+
+    setPending(true)
+    setError(null)
+    try {
+      await onCommit(parsed)
+    } catch (cause: unknown) {
+      setDraft(value ?? '')
+      setError(cause instanceof Error ? cause.message : 'Could not save')
+    } finally {
+      setPending(false)
+    }
+  }
+
+  return (
+    <label className="field">
+      <span>{label}</span>
+      <input
+        type="date"
+        value={draft}
+        disabled={disabled || pending}
+        onChange={(event) => void commit(event.target.value)}
+      />
       {error ? (
         <span className="field__error" role="alert">
           {error}

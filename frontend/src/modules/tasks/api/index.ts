@@ -61,6 +61,24 @@ export const tasksApi = {
     })
   },
 
+  /**
+   * Create a task that belongs to the organization but to no project yet.
+   *
+   * The flat route rather than the nested one, because there is no project to
+   * nest under. `project_id` may still be passed when the person is filing it
+   * straight away.
+   */
+  createUnfiled(organizationId: string, payload: TaskCreate): Promise<Task> {
+    return api.post<Task>(`/tasks${buildQuery(tenant(organizationId))}`, {
+      title: payload.title,
+      description: payload.description ?? null,
+      priority: payload.priority ?? null,
+      due_date: payload.due_date ?? null,
+      assignee_id: payload.assignee_id ?? null,
+      project_id: payload.project_id ?? null,
+    })
+  },
+
   update(organizationId: string, taskId: string, payload: TaskUpdate): Promise<Task> {
     return api.patch<Task>(`/tasks/${taskId}${buildQuery(tenant(organizationId))}`, payload)
   },

@@ -47,6 +47,8 @@ class TaskFilters:
     priority: tuple[TaskPriority, ...] = ()
     assignee_id: UUID | None = None
     unassigned: bool = False
+    #: Only tasks not filed under any project - the inbox as its own view.
+    unfiled: bool = False
     creator_id: UUID | None = None
     due_from: date | None = None
     due_to: date | None = None
@@ -66,6 +68,8 @@ class TaskFilters:
             clauses.append(Task.assignee_id == self.assignee_id)
         if self.unassigned:
             clauses.append(Task.assignee_id.is_(None))
+        if self.unfiled:
+            clauses.append(Task.project_id.is_(None))
         if self.creator_id is not None:
             clauses.append(Task.creator_id == self.creator_id)
         if self.due_from is not None:

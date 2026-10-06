@@ -11,17 +11,18 @@
 | Phase 0 — Architecture | ✅ | инфраструктура, Event Bus, Module Registry, CI, compose-стек |
 | Phase 1 — Core | ✅ | auth, users, organizations, teams, projects, permissions, activity, settings, миграции, тесты |
 | Phase 2 — Tasks | ✅ | задачи, комментарии, фильтры, поиск, сортировка, REST API, интерфейс |
+| Phase 3 — Tasks improvements | 🔄 | задачи без проекта, участники, администратор портала, i18n |
 
 Целевой первый полезный релиз — **Milestone 1 "Task Platform"** (раздел 69 документа).
 
 Что проверено на текущем дереве:
 
-- 261 автотест против настоящего PostgreSQL (реальные миграции Alembic, не `create_all`);
-- `ruff check` и `ruff format --check` — чисто, 89 файлов;
+- 284 автотеста против настоящего PostgreSQL (реальные миграции Alembic, не `create_all`);
+- `ruff check` и `ruff format --check` — чисто, 92 файла;
 - `mypy --strict` — чисто, 67 файлов;
 - `tsc --noEmit` — чисто, интерфейс собирается в production-режиме;
 - `alembic check` — расхождений между моделями и схемой нет;
-- `scripts/e2e.py` — 71 проверка через Caddy, скрипт можно запускать повторно;
+- `scripts/e2e.py` — 90 проверок через Caddy, скрипт можно запускать повторно;
 - Lighthouse по собранному интерфейсу: 100 / 100 / 100;
 - оба compose-файла валидны.
 
@@ -401,7 +402,7 @@ check`, линтер и типы для `scripts/`, `npm run typecheck`, `npm ru
 
 ## Дальнейшие шаги
 
-Phase 2 закрыт. Дальше — Phase 3 (labels, subtasks, зависимости, вложения,
-повторяющиеся задачи, массовые операции).
+Phase 2 закрыт. В работе — доработки задач из Phase 3: labels, subtasks,
+зависимости, вложения, повторяющиеся задачи, массовые операции.
 
 Подробный план — разделы 49–69 `docs/architecture.md`.

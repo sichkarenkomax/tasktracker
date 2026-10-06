@@ -1,4 +1,5 @@
 import { formatDateTime } from '../../../core/format'
+import { useI18n } from '../../../core/i18n'
 import type { ActivityItem } from '../types'
 
 /**
@@ -18,21 +19,25 @@ export interface ActivityFeedProps {
   actorNames?: ReadonlyMap<string, string>
 }
 
-function actorName(actorNames: ReadonlyMap<string, string> | undefined, id: string | null): string {
-  if (id === null) return 'System'
-  return actorNames?.get(id) ?? 'Someone'
+function actorName(actorNames: ReadonlyMap<string, string> | undefined, id: string | null, fallback: string): string {
+  if (id === null) return fallback
+  return actorNames?.get(id) ?? fallback
 }
 
 export function ActivityFeed({ items, actorNames }: ActivityFeedProps) {
+  const { t } = useI18n()
+
   if (items.length === 0) {
-    return <p className="muted">Nothing has happened here yet.</p>
+    return <p className="muted">{t('activity.empty')}</p>
   }
 
   return (
     <ol className="activity">
       {items.map((item) => (
         <li key={item.id} className="activity__item">
-          <span className="activity__actor">{actorName(actorNames, item.actor_id)}</span>
+          <span className="activity__actor">
+            {actorName(actorNames, item.actor_id, t('activity.system'))}
+          </span>
           <span className="activity__summary">{item.summary ?? item.action}</span>
           <time className="activity__time" dateTime={item.created_at}>
             {formatDateTime(item.created_at)}
