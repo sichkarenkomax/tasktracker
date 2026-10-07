@@ -473,6 +473,48 @@ ol {
   margin-bottom: var(--space-2);
 }
 
+/* --- reading and editing a box ------------------------------------------ */
+
+.orgbox__toggle {
+  flex-shrink: 0;
+}
+
+.orgbox__chevron--open {
+  transform: rotate(180deg);
+}
+
+button.orgbox__title {
+  border: 0;
+  padding: 0;
+  background: none;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 0.875rem;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.orgbox__title--draggable {
+  cursor: grab;
+}
+
+.orgbox__actions {
+  display: inline-flex;
+  gap: var(--space-1);
+  margin-left: var(--space-2);
+}
+
+.orgbox--selected {
+  border-color: var(--accent);
+}
+
+.orgbox--dragover {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 6%, var(--surface));
+}
+
+
 /**
  * One person.
  *
@@ -546,6 +588,14 @@ ol {
   font-size: 0.6875rem;
 }
 
+.orgperson--draggable {
+  cursor: grab;
+}
+
+.orgperson--draggable:active {
+  cursor: grabbing;
+}
+
 .org__note {
   margin-bottom: var(--space-3);
 }
@@ -588,6 +638,25 @@ ol {
   border: 1px solid var(--surface-02-border);
   border-radius: var(--radius);
   font-size: 0.8125rem;
+}
+
+/* One position: title, rank and scope, edited in place. */
+.org__position {
+  flex-wrap: wrap;
+}
+
+.org__position-title {
+  flex: 1 1 6rem;
+  min-width: 0;
+}
+
+.org__position-rank {
+  width: 3.5rem;
+}
+
+.org__position-dept {
+  flex: 1 1 7rem;
+  min-width: 0;
 }
 
 .org__inspector {

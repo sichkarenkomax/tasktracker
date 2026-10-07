@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { ReactElement } from 'react'
 
+import { useAuth } from '../auth/AuthContext'
 import { useI18n } from '../i18n'
 import { useMutation } from '../hooks/useAsync'
 import { organizationsApi } from './api'
@@ -65,13 +66,16 @@ export function CreateOrganizationForm() {
  * Gate for every page that cannot work without an organization.
  *
  * The important case is the third one. `loading` false with no organization means
- * the person genuinely has none - a new account - and the honest answer is an
- * invitation to create one. Rendering "Loading..." instead leaves them staring
- * at a spinner forever with no way forward, and no error either, because nothing
- * failed.
+ * the person genuinely has none - a new account - and the honest answer depends on
+ * who they are: on a single-organization installation only the portal
+ * administrator may set it up, so everybody else is told to wait rather than
+ * handed a form the server would refuse. Rendering "Loading..." instead leaves
+ * them staring at a spinner forever with no way forward, and no error either,
+ * because nothing failed.
  */
 export function RequiresOrganization({ children }: { children: ReactElement }) {
   const { t } = useI18n()
+  const { user } = useAuth()
   const { current, loading, error, organizations } = useOrganization()
 
   if (loading) {
@@ -87,11 +91,18 @@ export function RequiresOrganization({ children }: { children: ReactElement }) {
   }
 
   if (!current) {
+    const awaitingAdministrator = user !== null && !user.is_superuser
     return (
       <section className="onboarding">
         <h1>{t('auth.welcome')}</h1>
-        <p>{t('onboarding.createFirst')}</p>
-        <CreateOrganizationForm />
+        {awaitingAdministrator ? (
+          <p>{t('onboarding.awaitAdministrator')}</p>
+        ) : (
+          <>
+            <p>{t('onboarding.createFirst')}</p>
+            <CreateOrganizationForm />
+          </>
+        )}
         {organizations.length === 0 ? null : (
           <p className="muted">{t('auth.noOrganization')}</p>
         )}

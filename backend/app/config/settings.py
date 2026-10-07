@@ -76,6 +76,16 @@ class Settings(BaseSettings):
     max_page_size: int = 100
     default_page_size: int = 25
 
+    # --- Deployment shape --------------------------------------------------
+    #: One organization per installation. When true only a portal administrator
+    #: may set the organization up and a second one is refused outright.
+    single_organization: bool = True
+    #: The first account registered on a fresh installation becomes the portal
+    #: administrator, without which nobody could create the organization in
+    #: single-organization mode. Tests disable both flags to keep exercising
+    #: the multi-tenant surface.
+    bootstrap_superuser: bool = True
+
     # --- Reverse proxy -----------------------------------------------------
     site_address: str = ":80"
 

@@ -173,9 +173,90 @@ export function buildChart(
   return { roots: groupRoots, unplaced }
 }
 
+/**
+ * Would making ``managerId`` the manager of ``userId`` close a loop?
+ *
+ * Walking up from the proposed manager answers it: a loop exists exactly when
+ * the person being moved is already an ancestor. The server refuses the same
+ * write; this is the half that makes the drop do nothing visibly instead of
+ * showing an error the person did not cause by a wrong drag.
+ */
+export function wouldReportLoop(
+  placements: Record<string, Placement>,
+  userId: string,
+  managerId: string,
+): boolean {
+  const seen = new Set<string>()
+  let cursor: string | null = managerId
+  while (cursor && !seen.has(cursor)) {
+    if (cursor === userId) return true
+    seen.add(cursor)
+    cursor = placements[cursor]?.manager_id ?? null
+  }
+  return false
+}
+
 /** The same person, as the list renders them. */
 export function displayName(member: Member): string {
   return member.first_name || member.username
+}
+
+/**
+ * A department id together with everything nested under it.
+ *
+ * The re-parent guard needs it in both places that accept a drop: the chart,
+ * which refuses the gesture before a request goes out, and the parent picker in
+ * the inspector, which leaves the impossible options out entirely. The server
+ * checks the same thing, but a drop that visibly does nothing is a bug report
+ * waiting to happen.
+ */
+export function departmentSubtree(departments: Department[], departmentId: string): Set<string> {
+  const children = new Map<string | null, string[]>()
+  for (const department of departments) {
+    const list = children.get(department.parent_id) ?? []
+    list.push(department.id)
+    children.set(department.parent_id, list)
+  }
+
+  const result = new Set<string>()
+  const walk = (id: string) => {
+    if (result.has(id)) return
+    result.add(id)
+    for (const child of children.get(id) ?? []) walk(child)
+  }
+  walk(departmentId)
+  return result
+}
+
+/** Ids ordered as the editor draws them: parents, then their children. */
+export function flattenDepartments(departments: Department[]): Array<{
+  department: Department
+  depth: number
+}> {
+  const children = new Map<string | null, Department[]>()
+  for (const department of departments) {
+    const list = children.get(department.parent_id) ?? []
+    list.push(department)
+    children.set(department.parent_id, list)
+  }
+
+  const rows: Array<{ department: Department; depth: number }> = []
+  const visited = new Set<string>()
+  const walk = (department: Department, depth: number) => {
+    if (visited.has(department.id)) return
+    visited.add(department.id)
+    rows.push({ department, depth })
+    for (const child of children.get(department.id) ?? []) walk(child, depth + 1)
+  }
+  // A department whose parent is missing stays visible at the top level rather
+  // than disappearing, exactly as the chart draws it.
+  for (const department of departments) {
+    if (department.parent_id === null || !departments.some((item) => item.id === department.parent_id)) {
+      walk(department, 0)
+    }
+  }
+  for (const department of departments) walk(department, 0)
+  return rows
 }
 
 /**

@@ -35,6 +35,11 @@ os.environ.setdefault("SECRET_KEY", "test-secret-key-not-used-in-production")
 os.environ.setdefault("APP_ENV", "development")
 os.environ.setdefault("LOG_JSON", "false")
 os.environ.setdefault("LOG_LEVEL", "WARNING")
+# The shipped product shape is one organization set up by the first (bootstrap)
+# administrator; the suite exists to exercise the multi-tenant surface, so both
+# flags step aside here. `tests/test_single_organization.py` turns them back on.
+os.environ.setdefault("SINGLE_ORGANIZATION", "false")
+os.environ.setdefault("BOOTSTRAP_SUPERUSER", "false")
 
 import pytest  # noqa: E402
 from asgi_lifespan import LifespanManager  # noqa: E402

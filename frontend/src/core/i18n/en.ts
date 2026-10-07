@@ -75,7 +75,7 @@ export const en = {
   'auth.createOrganization': 'Create organization',
   'auth.organizationName': 'Organization name',
   'auth.intro':
-    'TaskTracker is self-hosted: the first account becomes the owner of its own organization.',
+    'TaskTracker is self-hosted: the first account becomes the portal administrator and sets up the organization.',
   'auth.welcome': 'Welcome',
   'auth.noOrganization': 'You are not a member of any organization yet. Create one to get started.',
   'auth.invalidCredentials': 'That email, username or password is not right.',
@@ -89,6 +89,8 @@ export const en = {
 
   // --- onboarding -------------------------------------------------------
   'onboarding.createFirst': 'Create your first organization to start adding projects and tasks.',
+  'onboarding.awaitAdministrator':
+    'The portal administrator has not set up the organization yet. You will get access as soon as it exists.',
   'onboarding.namePlaceholder': 'Acme Inc',
 
   // --- projects ---------------------------------------------------------
@@ -307,6 +309,16 @@ export const en = {
   'org.peopleCount': '{count} people',
   'org.managerCycle': 'That would create a loop in the reporting line',
   'org.people': 'People',
+  'org.editHint':
+    'Drag a department onto another to nest it, a person onto a department to place them, or a person onto another person to make them their manager.',
+  'org.departmentCycle': 'A department cannot be moved inside itself',
+  'org.collapse': 'Collapse',
+  'org.expand': 'Expand',
+  'org.addSubdepartment': 'Add subdepartment',
+  'org.departmentSettings': 'Department settings',
+  'org.topLevel': 'Top level (no parent)',
+  'org.positionEmpty': 'No positions yet',
+  'org.positionDepartment': 'Department',
   'members.email': 'Email',
   'members.add': 'Add member',
   'members.addTitle': 'Add a member',

@@ -43,6 +43,7 @@ class UserService:
         first_name: str | None = None,
         last_name: str | None = None,
         registration_open: bool = True,
+        bootstrap_superuser: bool = False,
     ) -> User:
         if not registration_open:
             raise RegistrationClosedError(
@@ -59,6 +60,11 @@ class UserService:
             last_name=last_name,
             status=UserStatus.ACTIVE,
         )
+        # Somebody has to be the first portal administrator, and every route
+        # that could grant the right already requires it. On a fresh
+        # installation that first account is whichever one registers first.
+        if bootstrap_superuser and await self._users.count() == 0:
+            user.is_superuser = True
         await self._users.add(user)
         await self._bus.publish_event(
             USER_REGISTERED,

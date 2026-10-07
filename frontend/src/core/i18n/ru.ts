@@ -72,7 +72,7 @@ export const ru: Record<TranslationKey, string> = {
   'auth.createOrganization': 'Создать организацию',
   'auth.organizationName': 'Название организации',
   'auth.intro':
-    'TaskTracker размещается у себя: первый аккаунт становится владельцем своей организации.',
+    'TaskTracker размещается у себя: первый аккаунт становится портал-администратором и создаёт организацию.',
   'auth.welcome': 'Добро пожаловать',
   'auth.noOrganization': 'Вы пока не состоите ни в одной организации. Создайте первую.',
   'auth.invalidCredentials': 'Почта, имя пользователя или пароль не подходят.',
@@ -85,6 +85,8 @@ export const ru: Record<TranslationKey, string> = {
 
   // --- onboarding -------------------------------------------------------
   'onboarding.createFirst': 'Создайте первую организацию, чтобы добавлять проекты и задачи.',
+  'onboarding.awaitAdministrator':
+    'Портал-администратор ещё не создал организацию. Доступ появится, как только она будет готова.',
   'onboarding.namePlaceholder': 'ООО «Альфа»',
 
   // --- projects ---------------------------------------------------------
@@ -303,6 +305,16 @@ export const ru: Record<TranslationKey, string> = {
   'org.peopleCount': '{count} чел.',
   'org.managerCycle': 'Так получится цикл в подчинении',
   'org.people': 'Люди',
+  'org.editHint':
+    'Перетащите отдел на другой, чтобы вложить его, человека — на отдел, чтобы поместить туда, или человека на человека, чтобы сделать его руководителем.',
+  'org.departmentCycle': 'Отдел нельзя перенести внутрь самого себя',
+  'org.collapse': 'Свернуть',
+  'org.expand': 'Развернуть',
+  'org.addSubdepartment': 'Добавить подотдел',
+  'org.departmentSettings': 'Настройки отдела',
+  'org.topLevel': 'Верхний уровень (без родителя)',
+  'org.positionEmpty': 'Должностей пока нет',
+  'org.positionDepartment': 'Отдел',
   'members.email': 'Почта',
   'members.add': 'Добавить участника',
   'members.addTitle': 'Добавить участника',

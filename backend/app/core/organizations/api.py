@@ -7,9 +7,10 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, status
 
+from app.config.settings import get_settings
 from app.core.auth.dependencies import CurrentUser, SessionDep
 from app.core.dependencies import EventBusDep
-from app.core.errors import NotFoundError
+from app.core.errors import ConflictError, NotFoundError, PermissionDeniedError
 from app.core.organizations.repository import (
     DepartmentRepository,
     DeputyRepository,
@@ -66,6 +67,17 @@ async def create_organization(
     session: SessionDep,
     bus: EventBusDep,
 ) -> OrganizationRead:
+    repository = OrganizationRepository(session)
+    if get_settings().single_organization:
+        # On a single-organization installation the organization is a piece of
+        # portal configuration, not something a tenant signs itself up for.
+        # The permission guard runs first so that a refusal never discloses
+        # whether the one organization already exists.
+        if not user.is_superuser:
+            raise PermissionDeniedError("Only a portal administrator can set up the organization")
+        if await repository.count() > 0:
+            raise ConflictError("This installation runs a single organization")
+
     service = await _organizations(session, bus)
     organization = await service.create(
         owner=user,
@@ -79,7 +91,11 @@ async def create_organization(
 
 @router.get("/organizations", response_model=list[OrganizationRead], summary="My organizations")
 async def list_organizations(user: CurrentUser, session: SessionDep) -> list[OrganizationRead]:
-    rows = await OrganizationRepository(session).list_for_user(user.id)
+    repository = OrganizationRepository(session)
+    if user.is_superuser:
+        organizations = await repository.list_all()
+        return [OrganizationRead.model_validate(organization) for organization in organizations]
+    rows = await repository.list_for_user(user.id)
     return [OrganizationRead.model_validate(organization) for organization, _ in rows]
 
 

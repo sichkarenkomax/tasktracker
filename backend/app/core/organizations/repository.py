@@ -50,6 +50,18 @@ class OrganizationRepository:
         await self._session.flush()
         return organization
 
+    async def count(self) -> int:
+        statement = select(func.count()).select_from(Organization)
+        return await count(self._session, statement)
+
+    async def list_all(self) -> list[Organization]:
+        """Every organization on the installation.
+
+        Only the portal administrator's callers reach this: an ordinary member
+        reads through ``list_for_user`` and stays inside their own tenant.
+        """
+        return await fetch_all(self._session, select(Organization).order_by(Organization.name))
+
     async def delete(self, organization: Organization) -> None:
         await self._session.delete(organization)
         await self._session.flush()

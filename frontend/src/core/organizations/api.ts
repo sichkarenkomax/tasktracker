@@ -121,7 +121,11 @@ export const organizationsApi = {
     })
   },
 
-  updatePosition(id: string, positionId: string, body: { title?: string; rank?: number | null }) {
+  updatePosition(
+    id: string,
+    positionId: string,
+    body: { title?: string; rank?: number | null; department_id?: string | null },
+  ) {
     return api.patch<OrgPosition>(`/organizations/${id}/positions/${positionId}`, body)
   },
 

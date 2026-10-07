@@ -6,8 +6,8 @@ import type { TranslationKey } from '../i18n'
 import { Icon } from '../layout/Icon'
 import { useCapabilities } from '../permissions/capabilities'
 import { organizationsApi } from './api'
-import type { Member, OrgStructure, Placement } from './api'
-import { displayName } from './chartLayout'
+import type { Member, OrgPosition, OrgStructure, Placement } from './api'
+import { departmentSubtree, displayName, flattenDepartments } from './chartLayout'
 import { OrgChart } from './OrgChart'
 import { useOrganizationId } from './OrganizationContext'
 import { RequiresOrganization } from './RequiresOrganization'
@@ -19,10 +19,13 @@ import { RequiresOrganization } from './RequiresOrganization'
  * list is how a specific fact is found, because "who is in Backend" is a lookup
  * and scrolling a chart to answer it is not.
  *
- * Every write goes through the API and the whole structure is reloaded afterwards
- * rather than patched locally. The chart is a graph; a locally patched graph is
- * one accepted-but-rejected reparent away from drawing something the server never
- * stored.
+ * Editing happens in three places over the same payload: the chart for the
+ * gestures (nest, place, report), an inspector per selected person or
+ * department for the fields, and the editor panel for the directory of
+ * departments and positions. Every write goes through the API and the whole
+ * structure is reloaded afterwards rather than patched locally. The chart is a
+ * graph; a locally patched graph is one accepted-but-rejected reparent away
+ * from drawing something the server never stored.
  */
 export function OrgStructurePage() {
   return (
@@ -40,7 +43,9 @@ function OrgStructure() {
   const capabilities = useCapabilities(organizationId)
   const [view, setView] = useState<View>('chart')
   const [selected, setSelected] = useState<string | null>(null)
+  const [selectedDepartment, setSelectedDepartment] = useState<string | null>(null)
   const [editing, setEditing] = useState(false)
+  const [actionError, setActionError] = useState<string | null>(null)
 
   const structure = useAsync(
     () => (organizationId ? organizationsApi.structure(organizationId) : Promise.resolve(null)),
@@ -51,9 +56,34 @@ function OrgStructure() {
 
   const members = structure.data ? toMembers(structure.data) : []
   const mayEdit = capabilities.canEditOrgStructure
-  const empty = structure.data
-    ? structure.data.departments.length === 0 && structure.data.members.length <= 1
-    : false
+  const canEdit = mayEdit && editing
+
+  /** One chart gesture: run it, then redraw from the server's answer. */
+  const runAction = async (action: Promise<unknown>): Promise<void> => {
+    setActionError(null)
+    try {
+      await action
+      structure.reload()
+    } catch (cause: unknown) {
+      setActionError(cause instanceof Error ? cause.message : t('error.generic'))
+    }
+  }
+
+  const selectPerson = (userId: string) => {
+    setSelectedDepartment(null)
+    setSelected((current) => (current === userId ? null : userId))
+  }
+
+  const selectDepartment = (departmentId: string) => {
+    setSelected(null)
+    setSelectedDepartment((current) => (current === departmentId ? null : departmentId))
+  }
+
+  const onAddDepartment = (parentId: string) => {
+    setSelected(null)
+    setSelectedDepartment(parentId)
+    setEditing(true)
+  }
 
   return (
     <section className="org">
@@ -82,7 +112,7 @@ function OrgStructure() {
             </button>
           </div>
 
-          {mayEdit && !empty ? (
+          {mayEdit ? (
             <button
               type="button"
               className={editing ? 'button button--primary' : 'button button--ghost'}
@@ -103,12 +133,24 @@ function OrgStructure() {
           {structure.error}
         </p>
       ) : null}
+      {actionError ? (
+        <p className="notice notice--error" role="alert">
+          {actionError}
+        </p>
+      ) : null}
       {structure.loading && !structure.data ? <p className="notice">{t('app.loading')}</p> : null}
 
       {structure.data ? (
         <>
-          {mayEdit && editing ? (
-            <StructureEditor structure={structure.data} onChanged={structure.reload} />
+          {canEdit ? (
+            <StructureEditor
+              structure={structure.data}
+              onChanged={structure.reload}
+              onSelectDepartment={(departmentId) => {
+                setSelected(null)
+                setSelectedDepartment(departmentId)
+              }}
+            />
           ) : null}
 
           {view === 'chart' ? (
@@ -116,28 +158,57 @@ function OrgStructure() {
               structure={structure.data}
               members={members}
               selectedUserId={selected}
-              onSelect={(userId) => {
-                setSelected((current) => (current === userId ? null : userId))
+              selectedDepartmentId={selectedDepartment}
+              editable={canEdit}
+              onSelect={selectPerson}
+              onSelectDepartment={selectDepartment}
+              onAddDepartment={onAddDepartment}
+              onReparentDepartment={async (departmentId, parentId) => {
+                await runAction(
+                  organizationsApi.updateDepartment(organizationId, departmentId, {
+                    parent_id: parentId,
+                  }),
+                )
               }}
+              onPlacePerson={async (userId, departmentId) => {
+                await runAction(
+                  organizationsApi.placeMember(organizationId, userId, { department_id: departmentId }),
+                )
+              }}
+              onAssignManager={async (userId, managerId) => {
+                await runAction(
+                  organizationsApi.placeMember(organizationId, userId, { manager_id: managerId }),
+                )
+              }}
+              onGestureError={(message) => setActionError(message)}
             />
           ) : (
             <OrgList
               structure={structure.data}
               members={members}
               selectedUserId={selected}
-              onSelect={(userId) => {
-                setSelected((current) => (current === userId ? null : userId))
-              }}
-              canEdit={editing && mayEdit}
+              onSelect={selectPerson}
+              canEdit={canEdit}
             />
           )}
+
+          {selectedDepartment && canEdit ? (
+            <DepartmentInspector
+              key={selectedDepartment}
+              structure={structure.data}
+              members={members}
+              departmentId={selectedDepartment}
+              onChanged={structure.reload}
+              onClose={() => setSelectedDepartment(null)}
+            />
+          ) : null}
 
           {selected ? (
             <PersonInspector
               structure={structure.data}
               members={members}
               userId={selected}
-              canEdit={editing && mayEdit}
+              canEdit={canEdit}
               onChanged={structure.reload}
               onClose={() => setSelected(null)}
             />
@@ -177,7 +248,7 @@ function OrgList({
   structure: OrgStructure
   members: Member[]
   selectedUserId: string | null
-  onSelect: (userId: string | null) => void
+  onSelect: (userId: string) => void
   canEdit: boolean
 }) {
   const { t } = useI18n()
@@ -185,7 +256,10 @@ function OrgList({
   // Only the chart can open the inspector on a click; here a click just selects
   // the row, because a row is already the whole record.
 
-  const rows = useMemo(() => flattenByReporting(structure.placements, members), [structure.placements, members])
+  const rows = useMemo(
+    () => flattenByReporting(structure.placements, members),
+    [structure.placements, members],
+  )
   const departmentsById = useMemo(
     () => new Map(structure.departments.map((department) => [department.id, department])),
     [structure.departments],
@@ -321,13 +395,22 @@ function flattenByReporting(placements: Record<string, Placement>, members: Memb
   return rows
 }
 
-/** Add and remove departments and positions. Placement happens per person. */
+/**
+ * The directory of departments and positions.
+ *
+ * Departments are drawn with their nesting visible and every row opens the
+ * inspector, because the row is where somebody noticed the department was
+ * wrong. Positions are edited in place: a title, a rank and a scope are three
+ * short facts, and a form per position would triple the clicks to fix one.
+ */
 function StructureEditor({
   structure,
   onChanged,
+  onSelectDepartment,
 }: {
   structure: OrgStructure
   onChanged: () => void
+  onSelectDepartment: (departmentId: string) => void
 }) {
   const { t } = useI18n()
   const organizationId = useOrganizationId()
@@ -354,7 +437,18 @@ function StructureEditor({
     await organizationsApi.deletePosition(organizationId, id)
   })
 
-  const failing = error ?? addDepartment.error ?? addPosition.error ?? removeDepartment.error
+  const report = (cause: unknown) => {
+    setError(cause instanceof Error ? cause.message : t('error.generic'))
+  }
+
+  const failing =
+    error ??
+    addDepartment.error ??
+    addPosition.error ??
+    removeDepartment.error ??
+    removePosition.error
+
+  const departmentRows = flattenDepartments(structure.departments)
 
   return (
     <section className="panel org__editor">
@@ -386,22 +480,32 @@ function StructureEditor({
         ) : null}
 
         <ul className="org__list">
-          {structure.departments.map((department) => (
-            <li key={department.id}>
-              <span>{department.name}</span>
+          {departmentRows.map(({ department, depth }) => (
+            <li key={department.id} style={{ paddingInlineStart: `${depth * 0.9 + 0.4}rem` }}>
+              <button
+                type="button"
+                className="orglist__name"
+                onClick={() => onSelectDepartment(department.id)}
+              >
+                {depth > 0 ? (
+                  <span className="orglist__branch" aria-hidden="true">
+                    ↳
+                  </span>
+                ) : null}
+                {department.name}
+              </button>
               <button
                 type="button"
                 className="icon-button"
                 aria-label={`${t('org.deleteDepartment')}: ${department.name}`}
                 onClick={() => {
                   if (
-                    !window.confirm(
-                      t('org.deleteDepartmentConfirm', { name: department.name }),
-                    )
+                    !window.confirm(t('org.deleteDepartmentConfirm', { name: department.name }))
                   ) {
                     return
                   }
-                  void removeDepartment.runOrThrow(department.id).then(onChanged)
+                  setError(null)
+                  void removeDepartment.runOrThrow(department.id).then(onChanged).catch(report)
                 }}
               >
                 <Icon name="trash" size={13} />
@@ -441,28 +545,19 @@ function StructureEditor({
           />
         ) : null}
 
-        <ul className="org__list">
+        <ul className="org__list org__list--positions">
           {structure.positions.map((position) => (
-            <li key={position.id}>
-              <span>{position.title}</span>
-              <button
-                type="button"
-                className="icon-button"
-                aria-label={`${t('org.deletePosition')}: ${position.title}`}
-                onClick={() => {
-                  if (!window.confirm(t('org.deletePositionConfirm', { title: position.title }))) {
-                    return
-                  }
-                  void removePosition.runOrThrow(position.id).then(onChanged)
-                }}
-              >
-                <Icon name="trash" size={13} />
-              </button>
-            </li>
+            <PositionRow
+              key={position.id}
+              structure={structure}
+              position={position}
+              onChanged={onChanged}
+              onError={report}
+            />
           ))}
         </ul>
         {structure.positions.length === 0 ? (
-          <p className="muted">{t('org.departmentEmpty')}</p>
+          <p className="muted">{t('org.positionEmpty')}</p>
         ) : null}
       </div>
 
@@ -472,6 +567,107 @@ function StructureEditor({
         </p>
       ) : null}
     </section>
+  )
+}
+
+/**
+ * One position, edited in place.
+ *
+ * The title and the rank are committed on blur rather than per keystroke: a
+ * rank is a number somebody types one digit at a time, and one request per
+ * digit would reload the structure from under their cursor.
+ */
+function PositionRow({
+  structure,
+  position,
+  onChanged,
+  onError,
+}: {
+  structure: OrgStructure
+  position: OrgPosition
+  onChanged: () => void
+  onError: (cause: unknown) => void
+}) {
+  const { t } = useI18n()
+  const organizationId = useOrganizationId()
+  const [title, setTitle] = useState(position.title)
+  const [rank, setRank] = useState(position.rank === null ? '' : String(position.rank))
+
+  const save = async (body: {
+    title?: string
+    rank?: number | null
+    department_id?: string | null
+  }) => {
+    if (!organizationId) return
+    try {
+      await organizationsApi.updatePosition(organizationId, position.id, body)
+      onChanged()
+    } catch (cause: unknown) {
+      onError(cause)
+    }
+  }
+
+  return (
+    <li className="org__position">
+      <input
+        className="org__position-title"
+        aria-label={t('org.positionTitle')}
+        maxLength={200}
+        value={title}
+        onChange={(event) => setTitle(event.target.value)}
+        onBlur={() => {
+          const trimmed = title.trim()
+          if (!trimmed || trimmed === position.title) {
+            setTitle(position.title)
+            return
+          }
+          void save({ title: trimmed })
+        }}
+      />
+      <input
+        className="org__position-rank"
+        type="number"
+        aria-label={t('org.rank')}
+        title={t('org.rankHint')}
+        value={rank}
+        onChange={(event) => setRank(event.target.value)}
+        onBlur={() => {
+          const trimmed = rank.trim()
+          const next = trimmed === '' ? null : Number(trimmed)
+          if (next === position.rank || (next === null && position.rank === null)) return
+          if (next !== null && !Number.isFinite(next)) return
+          void save({ rank: next })
+        }}
+      />
+      <select
+        className="org__position-dept"
+        aria-label={t('org.positionDepartment')}
+        value={position.department_id ?? ''}
+        onChange={(event) => void save({ department_id: event.target.value || null })}
+      >
+        <option value="">{t('org.noDepartment')}</option>
+        {structure.departments.map((department) => (
+          <option key={department.id} value={department.id}>
+            {department.name}
+          </option>
+        ))}
+      </select>
+      <button
+        type="button"
+        className="icon-button"
+        aria-label={`${t('org.deletePosition')}: ${position.title}`}
+        onClick={() => {
+          if (!organizationId) return
+          if (!window.confirm(t('org.deletePositionConfirm', { title: position.title }))) return
+          void organizationsApi
+            .deletePosition(organizationId, position.id)
+            .then(onChanged)
+            .catch(onError)
+        }}
+      >
+        <Icon name="trash" size={13} />
+      </button>
+    </li>
   )
 }
 
@@ -519,6 +715,192 @@ function NameForm({
 }
 
 /**
+ * One department, in full: name, place in the tree, and who heads it.
+ *
+ * Same contract as the person inspector - every control writes immediately and
+ * independently - with one extra rule: the parent picker leaves out the
+ * department's own subtree, so the loop the server would refuse cannot be
+ * selected in the first place.
+ */
+function DepartmentInspector({
+  structure,
+  members,
+  departmentId,
+  onChanged,
+  onClose,
+}: {
+  structure: OrgStructure
+  members: Member[]
+  departmentId: string
+  onChanged: () => void
+  onClose: () => void
+}) {
+  const { t } = useI18n()
+  const organizationId = useOrganizationId()
+  const [error, setError] = useState<string | null>(null)
+
+  const department = structure.departments.find((item) => item.id === departmentId)
+  const [name, setName] = useState(department?.name ?? '')
+
+  const addChild = useMutation<string, void>(async (childName) => {
+    if (!organizationId) return
+    await organizationsApi.createDepartment(organizationId, {
+      name: childName,
+      parent_id: departmentId,
+    })
+  })
+
+  if (!department || !organizationId) return null
+
+  const forbidden = departmentSubtree(structure.departments, departmentId)
+
+  const run = async (action: Promise<unknown>) => {
+    setError(null)
+    try {
+      await action
+      onChanged()
+    } catch (cause: unknown) {
+      setError(cause instanceof Error ? cause.message : t('error.generic'))
+    }
+  }
+
+  const saveName = () => {
+    const trimmed = name.trim()
+    if (!trimmed || trimmed === department.name) {
+      setName(department.name)
+      return
+    }
+    void run(organizationsApi.updateDepartment(organizationId, departmentId, { name: trimmed }))
+  }
+
+  return (
+    <section className="panel org__inspector">
+      <header className="org__inspector-head">
+        <span className="account__avatar" aria-hidden="true">
+          {department.name.charAt(0).toUpperCase()}
+        </span>
+        <div>
+          <strong>{department.name}</strong>
+          <span className="muted">{t('org.departmentSettings')}</span>
+        </div>
+        <button type="button" className="icon-button" aria-label={t('app.cancel')} onClick={onClose}>
+          <Icon name="close" size={14} />
+        </button>
+      </header>
+
+      <div className="fields">
+        <label className="field">
+          <span>{t('org.departmentName')}</span>
+          <input
+            maxLength={200}
+            value={name}
+            disabled={addChild.pending}
+            onChange={(event) => setName(event.target.value)}
+            onBlur={saveName}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault()
+                saveName()
+              }
+            }}
+          />
+        </label>
+
+        <label className="field">
+          <span>{t('org.parent')}</span>
+          <select
+            value={department.parent_id ?? ''}
+            onChange={(event) =>
+              void run(
+                organizationsApi.updateDepartment(organizationId, departmentId, {
+                  parent_id: event.target.value || null,
+                }),
+              )
+            }
+          >
+            <option value="">{t('org.topLevel')}</option>
+            {structure.departments
+              .filter((item) => !forbidden.has(item.id))
+              .map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.name}
+                </option>
+              ))}
+          </select>
+        </label>
+
+        <label className="field">
+          <span>{t('org.head')}</span>
+          <select
+            value={department.head_id ?? ''}
+            onChange={(event) =>
+              void run(
+                organizationsApi.updateDepartment(organizationId, departmentId, {
+                  head_id: event.target.value || null,
+                }),
+              )
+            }
+          >
+            <option value="">{t('org.noManager')}</option>
+            {members.map((item) => (
+              <option key={item.user_id} value={item.user_id}>
+                {displayName(item)}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+
+      <div className="org__deputies">
+        <h3>{t('org.addSubdepartment')}</h3>
+        <NameForm
+          label={t('org.departmentName')}
+          submitLabel={t('app.create')}
+          pending={addChild.pending}
+          onSubmit={async (childName) => {
+            setError(null)
+            const done = await addChild.run(childName)
+            if (done !== null) onChanged()
+          }}
+        />
+      </div>
+
+      <div className="org__deputies">
+        <h3>{t('org.deleteDepartment')}</h3>
+        <button
+          type="button"
+          className="button button--ghost"
+          onClick={() => {
+            if (!window.confirm(t('org.deleteDepartmentConfirm', { name: department.name }))) {
+              return
+            }
+            void (async () => {
+              setError(null)
+              try {
+                await organizationsApi.deleteDepartment(organizationId, departmentId)
+                onClose()
+                onChanged()
+              } catch (cause: unknown) {
+                setError(cause instanceof Error ? cause.message : t('error.generic'))
+              }
+            })()
+          }}
+        >
+          <Icon name="trash" size={14} />
+          {t('org.deleteDepartment')}
+        </button>
+      </div>
+
+      {error ? (
+        <p className="notice notice--error" role="alert">
+          {error}
+        </p>
+      ) : null}
+    </section>
+  )
+}
+
+/**
  * One person's placement, in full.
  *
  * Every control writes immediately and independently. That is deliberate: the
@@ -547,12 +929,13 @@ function PersonInspector({
   const member = members.find((item) => item.user_id === userId)
   const placement = structure.placements[userId]
 
-  const place = useMutation<{ department_id?: string | null; position_id?: string | null; manager_id?: string | null }, void>(
-    async (body) => {
-      if (!organizationId) return
-      await organizationsApi.placeMember(organizationId, userId, body)
-    },
-  )
+  const place = useMutation<
+    { department_id?: string | null; position_id?: string | null; manager_id?: string | null },
+    void
+  >(async (body) => {
+    if (!organizationId) return
+    await organizationsApi.placeMember(organizationId, userId, body)
+  })
 
   const addDeputy = useMutation<string, void>(async (deputyId) => {
     if (!organizationId) return
@@ -569,9 +952,7 @@ function PersonInspector({
   // Everybody except this person: the server refuses the rest, but offering them
   // would fill the list with choices that always fail.
   const candidates = members.filter((item) => item.user_id !== userId)
-  const deputyCandidates = candidates.filter(
-    (item) => !placement.deputies.includes(item.user_id),
-  )
+  const deputyCandidates = candidates.filter((item) => !placement.deputies.includes(item.user_id))
 
   const run = async (action: Promise<unknown>) => {
     setError(null)
@@ -605,9 +986,7 @@ function PersonInspector({
             value={placement.department_id ?? ''}
             disabled={!canEdit || place.pending}
             onChange={(event) =>
-              void run(
-                place.runOrThrow({ department_id: event.target.value || null }),
-              )
+              void run(place.runOrThrow({ department_id: event.target.value || null }))
             }
           >
             <option value="">{t('org.noDepartment')}</option>
@@ -625,9 +1004,7 @@ function PersonInspector({
             value={placement.position_id ?? ''}
             disabled={!canEdit || place.pending}
             onChange={(event) =>
-              void run(
-                place.runOrThrow({ position_id: event.target.value || null }),
-              )
+              void run(place.runOrThrow({ position_id: event.target.value || null }))
             }
           >
             <option value="">{t('org.noPosition')}</option>
@@ -644,9 +1021,7 @@ function PersonInspector({
           <select
             value={placement.manager_id ?? ''}
             disabled={!canEdit || place.pending}
-            onChange={(event) =>
-              void run(place.runOrThrow({ manager_id: event.target.value || null }))
-            }
+            onChange={(event) => void run(place.runOrThrow({ manager_id: event.target.value || null }))}
           >
             <option value="">{t('org.noManager')}</option>
             {candidates.map((item) => (
@@ -673,9 +1048,7 @@ function PersonInspector({
                     className="icon-button"
                     aria-label={`${t('org.deputy')}: ${nameOf(members, deputyId)}`}
                     disabled={removeDeputy.pending}
-                    onClick={() =>
-                      void run(removeDeputy.runOrThrow(deputyId))
-                    }
+                    onClick={() => void run(removeDeputy.runOrThrow(deputyId))}
                   >
                     <Icon name="close" size={13} />
                   </button>

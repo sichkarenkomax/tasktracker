@@ -5,8 +5,10 @@ sections 50 and 65) through Caddy, exactly as a browser would: register, create
 an organization and a project, invite a second user, then work with tasks and
 comments and read the activity feed.
 
-Every run uses fresh random identities, so the script is re-runnable against a
-stack that already holds data.
+Every run uses fresh random identities. In single-organization mode (the
+shipped default) the script additionally needs a clean database, because the
+organization it sets up may only be created once: a reused installation is
+detected right after registration and reported with the reset command.
 
     python scripts/e2e.py [base-url]
 """
@@ -98,8 +100,17 @@ def main() -> int:
 
     status, profile = call("GET", "/api/v1/users/me", token=owner_token)
     check("profile", status, 200)
-    check("a fresh account is not an administrator", profile["is_superuser"], False)
     owner_id = str(profile["id"])
+    if not profile["is_superuser"]:
+        # Single-organization mode: only the portal administrator may set the
+        # organization up, and on a reused installation that first account is
+        # already taken - so the rest of the script has nothing to work with.
+        raise CheckFailedError(
+            "this account is not the portal administrator, so the installation "
+            "already holds data. Single-organization mode needs a clean database: "
+            "`docker compose down -v`, then `make up && make migrate` and re-run."
+        )
+    print("  ok  the first account is the portal administrator")
 
     # Slugs are unique platform-wide, so the name carries the run handle and the
     # script stays re-runnable against a stack that already holds data.
@@ -648,24 +659,60 @@ def main() -> int:
     )
     check("the last owner cannot be removed", status, 422)
 
+    # --- the single organization ---------------------------------------------
+    # Whoever registers later cannot set the organization up: that is portal
+    # configuration, and the account that already did it is the administrator.
+    latecomer_token, _ = register("latecomer")
+    status, _ = call(
+        "POST",
+        "/api/v1/organizations",
+        token=latecomer_token,
+        body={"name": f"Second {handle}"},
+    )
+    check("a plain account cannot create an organization", status, 403)
+
+    status, _ = call(
+        "POST",
+        "/api/v1/organizations",
+        token=owner_token,
+        body={"name": f"Second {handle}"},
+    )
+    check("a second organization is refused", status, 409)
+
     # --- portal administration -----------------------------------------------
     # The user directory is the one cross-tenant read in the product, so the guard
-    # on it is `is_superuser` rather than an organization role.
+    # on it is `is_superuser` rather than an organization role. The bootstrap
+    # administrator passes it; everyone else is refused.
     status, _ = call("GET", "/api/v1/users?limit=200", token=owner_token)
+    check("the bootstrap administrator sees the user directory", status, 200)
+
+    status, _ = call("GET", "/api/v1/users?limit=200", token=assignee_token)
     check("a plain account sees no user directory", status, 403)
 
     status, _ = call("GET", "/api/v1/users?limit=200", token=outsider_token)
     check("a stranger sees no user directory", status, 403)
 
-    # Grant the right through the database, then prove the guard opens and that
-    # nobody can take it away from themselves.
+    # Nobody may hand the right to themselves; the holder may pass it on.
+    status, outsider_profile = call("GET", "/api/v1/users/me", token=outsider_token)
+    check("stranger profile", status, 200)
+    outsider_id = str(outsider_profile["id"])
+
     status, _ = call(
         "PATCH",
-        f"/api/v1/users/{owner_id}/superuser",
-        token=owner_token,
+        f"/api/v1/users/{outsider_id}/superuser",
+        token=outsider_token,
         body={"is_superuser": True},
     )
     check("only an administrator may grant the right", status, 403)
+
+    status, granted = call(
+        "PATCH",
+        f"/api/v1/users/{outsider_id}/superuser",
+        token=owner_token,
+        body={"is_superuser": True},
+    )
+    check("the bootstrap administrator grants the right", status, 200)
+    check("the grant is applied", granted["is_superuser"], True)
 
     print("\nall checks passed")
     return 0

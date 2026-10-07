@@ -6,6 +6,11 @@ FROM node:22-alpine AS build
 
 WORKDIR /app
 
+# Node tries AAAA records first; on networks where IPv6 stalls, npm hangs
+# until its fetch timeout and the build dies with EIDLETIMEOUT. IPv4-first
+# still uses IPv6 when a name has no A records.
+ENV NODE_OPTIONS=--dns-result-order=ipv4first
+
 COPY package.json package-lock.json* ./
 RUN if [ -f package-lock.json ]; then npm ci; else npm install; fi
 

@@ -77,6 +77,7 @@ async def register(
         first_name=payload.first_name,
         last_name=payload.last_name,
         registration_open=get_settings().registration_open,
+        bootstrap_superuser=get_settings().bootstrap_superuser,
     )
     await session.commit()
     return _issue(user, response)
