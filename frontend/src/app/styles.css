@@ -16,9 +16,13 @@
  * - Huly's light-theme popover is dark (#131925). That reads as deliberate there
  *   because every surface under it is light; here it would look like a rendering
  *   fault, so popovers use the raised surface in both themes.
- * - Huly drives theme choice from a class on the root. This app follows the
- *   operating system instead, so the light and dark blocks below are both keyed
- *   to `prefers-color-scheme` and no runtime toggle can desynchronise them.
+ * - Huly drives theme choice from a class on the root. This app ships two
+ *   themes under one attribute: `data-theme="blue"` is the original palette and
+ *   still follows the operating system's light/dark, while `data-theme="gold"`
+ *   (the default, stage 1.1) is a fixed dark palette and ignores it. The choice
+ *   lives in the profile page and is written onto <html> by a script in
+ *   index.html before the stylesheet applies, so a reload paints the stored
+ *   theme rather than flashing the default one.
  *
  * The badge ink flips with the theme, which is the one place a palette that reads
  * well in both cannot use a single foreground colour: white on the light-theme
@@ -67,12 +71,13 @@
   --space-5: 1.5rem;
   --space-6: 2rem;
 
-  /* Huly rounds controls to 4px, navigation rows to 6px and containers to 12px.
-     Using three values instead of one is what makes the interface read as soft
+  /* Three tiers - controls, rows, containers. The values are 6/8/16 rather than
+     Huly's 4/6/12: the stage-1 shape references (1.1) are noticeably softer, and
+     three values instead of one is still what makes the interface read as soft
      rather than merely rounded. */
-  --radius: 4px;
-  --radius-md: 6px;
-  --radius-lg: 12px;
+  --radius: 6px;
+  --radius-md: 8px;
+  --radius-lg: 16px;
 
   --font: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
 
@@ -131,7 +136,7 @@
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme='gold']) {
     /* In Huly's dark theme the page is the darkest layer and the panels sit
        above it, which is the reverse of light: there the page is #F1F1F4 and the
        panels are white. */
@@ -179,6 +184,66 @@
 
     --badge-ink: #0e0f10;
   }
+}
+
+/**
+ * The golden theme (stage 1.1) - the default. Charcoal panels on a near-black
+ * page with one warm accent sampled from the reference artwork, and black ink
+ * on that accent. Unlike blue it has no light variant: the reference exists in
+ * a single (dark) form, so the block carries `color-scheme: dark` and simply
+ * comes after both rules above, winning the cascade with equal specificity
+ * while the blue media query no longer matches this root at all.
+ */
+[data-theme='gold'] {
+  color-scheme: dark;
+
+  --surface: #1b1b1d;
+  --surface-raised: #26262a;
+  --page: #0d0d0f;
+  --text: #f4f4f2;
+  --text-muted: #a7a7ad;
+  --text-faint: #7b7b80;
+  --text-disabled: #56565c;
+  --accent: #f8c840;
+  --accent-hover: #ffd75e;
+  --accent-active: #e3b432;
+  --accent-text: #0a0a0a;
+  --link: #f8c840;
+  --danger: #e05a4f;
+  --danger-hover: #ec6d62;
+  --ok: #34db80;
+  --warn: #ffbd2e;
+
+  --nav: #0d0d0f;
+  --nav-hover: rgb(255 255 255 / 5%);
+  --nav-active: rgb(248 200 64 / 14%);
+  --nav-divider: rgb(255 255 255 / 7%);
+
+  --surface-01-bg: #232326;
+  --surface-01-border: #33333a;
+  --surface-02-border: #35353b;
+  --divider: rgb(255 255 255 / 8%);
+  --input-bg: rgb(255 255 255 / 5%);
+  --input-border: rgb(255 255 255 / 12%);
+  --focus: #f8c840;
+  --table-head: #212124;
+  --table-row: #1e1e21;
+  --overlay: rgb(0 0 0 / 60%);
+  --shadow: 0 2px 6px rgb(0 0 0 / 45%);
+  --shadow-lg: 0 8px 32px rgb(0 0 0 / 60%);
+
+  /* The accent also carries "in progress" here: gold is the one colour the eye
+     already tracks through the screen, and the badge tints keep it legible. */
+  --todo: #939395;
+  --in-progress: #f8c840;
+  --deferred: #b07fd0;
+  --done: #34db80;
+  --low: #8e99af;
+  --medium: #ffa63d;
+  --high: #f6684b;
+  --urgent: #f6684b;
+
+  --badge-ink: #0d0d0f;
 }
 
 * {
@@ -276,6 +341,13 @@ ol {
 }
 .shell__main {
   grid-area: main;
+
+  /* The one place page content gets its breathing room: every page renders
+     directly into this grid cell, so without it headings sit flush against the
+     bar's bottom rule and the navigator's right rule (stage 1.2). The bottom
+     value is larger because a page's last row should not end on the viewport
+     edge either. */
+  padding: var(--space-5) var(--space-5) var(--space-6);
 }
 
 .shell__body {
@@ -1069,6 +1141,7 @@ textarea {
 
 .notice {
   padding: var(--space-3) var(--space-4);
+  margin: var(--space-3) 0;
   border-radius: var(--radius-md);
   background: var(--input-bg);
   border: 1px solid var(--surface-02-border);
@@ -1088,6 +1161,12 @@ textarea {
   border: 1px solid var(--surface-02-border);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow);
+}
+
+/* Sections on the same page are siblings with no shared grid to space them;
+   without this the profile and settings pages stack panels border to border. */
+.panel + .panel {
+  margin-top: var(--space-4);
 }
 
 .panel__hint {
@@ -1418,6 +1497,7 @@ textarea {
   gap: var(--space-2);
   align-items: center;
   padding: var(--space-3);
+  margin-bottom: var(--space-3);
   background: var(--surface);
   border: 1px solid var(--surface-02-border);
   border-radius: var(--radius-lg);
@@ -2022,9 +2102,8 @@ textarea {
     grid-template-columns: var(--rail-width) minmax(0, 1fr);
   }
 
-  .narrow,
-  .narrow-wide {
-    padding: 0 var(--space-3);
+  .shell__main {
+    padding: var(--space-4) var(--space-3) var(--space-5);
   }
 
   .readfields__row {

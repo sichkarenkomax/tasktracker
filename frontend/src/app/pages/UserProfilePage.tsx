@@ -8,6 +8,8 @@ import { formatDateTime } from '../../core/format'
 import { useMutation } from '../../core/hooks/useAsync'
 import { useI18n, LOCALES } from '../../core/i18n'
 import type { Locale } from '../../core/i18n'
+import { getTheme, setTheme } from '../../core/theme/theme'
+import type { Theme } from '../../core/theme/theme'
 
 /**
  * The signed-in person's own settings.
@@ -26,6 +28,7 @@ export function UserProfilePage() {
   })
   const [passwords, setPasswords] = useState({ current: '', next: '' })
   const [passwordDone, setPasswordDone] = useState(false)
+  const [theme, chooseTheme] = useState<Theme>(getTheme)
   const [error, setError] = useState<string | null>(null)
 
   const saveProfile = useMutation<{ first_name: string; last_name: string }, void>(
@@ -131,6 +134,24 @@ export function UserProfilePage() {
                 {entry.label}
               </option>
             ))}
+          </select>
+        </label>
+      </section>
+
+      <section className="panel">
+        <h2>{t('settings.theme')}</h2>
+        <label className="field">
+          <span className="visually-hidden">{t('settings.theme')}</span>
+          <select
+            value={theme}
+            onChange={(event) => {
+              const next = event.target.value as Theme
+              chooseTheme(next)
+              setTheme(next)
+            }}
+          >
+            <option value="gold">{t('settings.themeGold')}</option>
+            <option value="blue">{t('settings.themeBlue')}</option>
           </select>
         </label>
       </section>
