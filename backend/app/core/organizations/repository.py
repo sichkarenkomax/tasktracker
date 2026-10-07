@@ -13,8 +13,11 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.organizations.models import (
+    Department,
+    MemberDeputy,
     Organization,
     OrganizationMember,
+    OrgPosition,
     Team,
     TeamMember,
 )
@@ -115,6 +118,199 @@ class OrganizationRepository:
             )
         )
         return await count(self._session, statement)
+
+    async def is_member(self, organization_id: UUID, user_id: UUID) -> bool:
+        """Is this person in this organization?
+
+        The chart references people by id, and a reference to somebody outside the
+        tenant would draw a node no page can resolve. Every writer checks this
+        rather than trusting the client.
+        """
+        statement = (
+            select(func.count())
+            .select_from(OrganizationMember)
+            .where(
+                OrganizationMember.organization_id == organization_id,
+                OrganizationMember.user_id == user_id,
+            )
+        )
+        return await count(self._session, statement) > 0
+
+
+class DepartmentRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def get(self, department_id: UUID, *, organization_id: UUID) -> Department | None:
+        return await fetch_one(
+            self._session,
+            select(Department).where(
+                Department.id == department_id,
+                Department.organization_id == organization_id,
+            ),
+        )
+
+    async def list_all(self, organization_id: UUID) -> list[Department]:
+        # Ordered by the stored position rather than the name: the order somebody
+        # arranged is the order they want to read.
+        return await fetch_all(
+            self._session,
+            select(Department)
+            .where(Department.organization_id == organization_id)
+            .order_by(Department.position, Department.name),
+        )
+
+    async def name_taken(
+        self, organization_id: UUID, name: str, *, exclude_id: UUID | None = None
+    ) -> bool:
+        existing = await fetch_one(
+            self._session,
+            select(Department).where(
+                Department.organization_id == organization_id,
+                Department.name == name,
+            ),
+        )
+        return existing is not None and existing.id != exclude_id
+
+    async def add(self, department: Department) -> Department:
+        self._session.add(department)
+        await self._session.flush()
+        return department
+
+    async def delete(self, department: Department) -> None:
+        await self._session.delete(department)
+        await self._session.flush()
+
+    async def next_position(self, organization_id: UUID, parent_id: UUID | None) -> int:
+        """Where the next sibling goes.
+
+        One past the last one rather than the count: deleting a department in the
+        middle must not make the next insert collide with the name of an existing
+        sibling.
+        """
+        conditions = [
+            Department.organization_id == organization_id,
+            Department.parent_id.is_(None)
+            if parent_id is None
+            else Department.parent_id == parent_id,
+        ]
+        statement = select(func.max(Department.position)).where(*conditions)
+        current = await self._session.scalar(statement)
+        return 0 if current is None else int(current) + 1
+
+
+class PositionRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def get(self, position_id: UUID, *, organization_id: UUID) -> OrgPosition | None:
+        return await fetch_one(
+            self._session,
+            select(OrgPosition).where(
+                OrgPosition.id == position_id,
+                OrgPosition.organization_id == organization_id,
+            ),
+        )
+
+    async def list_all(self, organization_id: UUID) -> list[OrgPosition]:
+        # A null rank sorts last in PostgreSQL by default, which is what we want:
+        # an unranked title never outranks one somebody ranked on purpose.
+        return await fetch_all(
+            self._session,
+            select(OrgPosition)
+            .where(OrgPosition.organization_id == organization_id)
+            .order_by(OrgPosition.rank.desc().nullslast(), OrgPosition.title),
+        )
+
+    async def title_taken(
+        self, organization_id: UUID, title: str, *, exclude_id: UUID | None = None
+    ) -> bool:
+        existing = await fetch_one(
+            self._session,
+            select(OrgPosition).where(
+                OrgPosition.organization_id == organization_id,
+                OrgPosition.title == title,
+            ),
+        )
+        return existing is not None and existing.id != exclude_id
+
+    async def add(self, position: OrgPosition) -> OrgPosition:
+        self._session.add(position)
+        await self._session.flush()
+        return position
+
+    async def delete(self, position: OrgPosition) -> None:
+        await self._session.delete(position)
+        await self._session.flush()
+
+
+class DeputyRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def list_all(self, organization_id: UUID) -> list[tuple[UUID, list[UUID]]]:
+        """Every deputy row in this organization, grouped by the person covered.
+
+        Grouped here rather than in the service because the grouping needs the
+        whole table; doing it per member would mean one query per member inside a
+        single request.
+        """
+        statement = (
+            select(MemberDeputy.user_id, MemberDeputy.deputy_id)
+            .where(MemberDeputy.organization_id == organization_id)
+            .order_by(MemberDeputy.user_id, MemberDeputy.deputy_id)
+        )
+        rows = await self._session.execute(statement)
+        grouped: dict[UUID, list[UUID]] = {}
+        for user_id, deputy_id in rows:
+            grouped.setdefault(user_id, []).append(deputy_id)
+        return list(grouped.items())
+
+    async def list_for(self, organization_id: UUID, user_id: UUID) -> list[UUID]:
+        """Deputies of one person.
+
+        Returns bare ids: the reader already has the member list and joining the
+        two here would return the same rows twice for every deputy.
+        """
+        statement = select(MemberDeputy.deputy_id).where(
+            MemberDeputy.organization_id == organization_id,
+            MemberDeputy.user_id == user_id,
+        )
+        rows = await self._session.scalars(statement)
+        return [row for row in rows]
+
+    async def add(
+        self, *, organization_id: UUID, user_id: UUID, deputy_id: UUID
+    ) -> MemberDeputy | None:
+        existing = await fetch_one(
+            self._session,
+            select(MemberDeputy).where(
+                MemberDeputy.organization_id == organization_id,
+                MemberDeputy.user_id == user_id,
+                MemberDeputy.deputy_id == deputy_id,
+            ),
+        )
+        if existing is not None:
+            return existing
+        row = MemberDeputy(organization_id=organization_id, user_id=user_id, deputy_id=deputy_id)
+        self._session.add(row)
+        await self._session.flush()
+        return row
+
+    async def remove(self, *, organization_id: UUID, user_id: UUID, deputy_id: UUID) -> bool:
+        row = await fetch_one(
+            self._session,
+            select(MemberDeputy).where(
+                MemberDeputy.organization_id == organization_id,
+                MemberDeputy.user_id == user_id,
+                MemberDeputy.deputy_id == deputy_id,
+            ),
+        )
+        if row is None:
+            return False
+        await self._session.delete(row)
+        await self._session.flush()
+        return True
 
 
 class TeamRepository:

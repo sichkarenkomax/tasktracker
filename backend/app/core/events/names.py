@@ -27,6 +27,18 @@ TEAM_DELETED: Final = "team.deleted"
 TEAM_MEMBER_ADDED: Final = "team.member_added"
 TEAM_MEMBER_REMOVED: Final = "team.member_removed"
 
+# Organization structure. `org.` rather than `organization.` so a subscriber can
+# filter the chart separately from the tenant record itself.
+ORG_DEPARTMENT_CREATED: Final = "org.department_created"
+ORG_DEPARTMENT_UPDATED: Final = "org.department_updated"
+ORG_DEPARTMENT_DELETED: Final = "org.department_deleted"
+ORG_POSITION_CREATED: Final = "org.position_created"
+ORG_POSITION_UPDATED: Final = "org.position_updated"
+ORG_POSITION_DELETED: Final = "org.position_deleted"
+ORG_MEMBER_PLACED: Final = "org.member_placed"
+ORG_DEPUTY_ADDED: Final = "org.deputy_added"
+ORG_DEPUTY_REMOVED: Final = "org.deputy_removed"
+
 PROJECT_CREATED: Final = "project.created"
 PROJECT_UPDATED: Final = "project.updated"
 PROJECT_DELETED: Final = "project.deleted"

@@ -33,5 +33,9 @@ MANIFEST = ModuleManifest(
         "task.deleted",
         "comment.created",
         "comment.deleted",
+        # Co-assignees and watchers. Emitted so the feed can say who joined a
+        # task, which is otherwise invisible from the events above.
+        "task.participant_added",
+        "task.participant_removed",
     ),
 )

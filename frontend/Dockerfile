@@ -11,6 +11,9 @@ RUN if [ -f package-lock.json ]; then npm ci; else npm install; fi
 
 COPY tsconfig.json vite.config.ts index.html ./
 COPY src ./src
+# Vite copies `public/` verbatim into the bundle, which is where the self-hosted
+# fonts live: the product runs without a CDN, so nothing may be fetched from one.
+COPY public ./public
 RUN npm run build
 
 FROM nginx:1.27-alpine AS runtime

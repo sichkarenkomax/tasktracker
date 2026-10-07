@@ -93,6 +93,129 @@ class MemberRoleUpdate(BaseModel):
     role: OrganizationRole
 
 
+# --- organization structure -------------------------------------------------
+
+
+class OrgWriteModel(BaseModel):
+    """Base for the org chart's writes.
+
+    Unknown fields are rejected rather than dropped, for the same reason the
+    Tasks module does it: a typo has to be reported, not silently ignored while
+    the request reports success.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class DepartmentCreate(OrgWriteModel):
+    name: str = Field(min_length=1, max_length=200)
+    #: Null means a top-level department. Sending null and omitting the key mean
+    #: different things on update, which is why the update has its own model.
+    parent_id: UUID | None = None
+    description: str | None = Field(default=None, max_length=2000)
+
+
+class DepartmentUpdate(OrgWriteModel):
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    description: str | None = Field(default=None, max_length=2000)
+    parent_id: UUID | None = None
+    head_id: UUID | None = None
+
+    def sent(self, field: str) -> bool:
+        """Was this key actually present in the request?
+
+        ``model_fields_set`` is the only way to tell "clear the parent" from
+        "leave the parent alone", and every nullable field on this model needs the
+        distinction - otherwise saving a name would silently promote a department
+        to the top of the chart.
+        """
+        return field in self.model_fields_set
+
+
+class DepartmentRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    organization_id: UUID
+    name: str
+    description: str | None
+    parent_id: UUID | None
+    head_id: UUID | None
+    position: int
+
+
+class PositionCreate(OrgWriteModel):
+    title: str = Field(min_length=1, max_length=200)
+    #: Null makes the title organization-wide.
+    department_id: UUID | None = None
+    description: str | None = Field(default=None, max_length=2000)
+    rank: int | None = None
+
+
+class PositionUpdate(OrgWriteModel):
+    title: str | None = Field(default=None, min_length=1, max_length=200)
+    description: str | None = Field(default=None, max_length=2000)
+    department_id: UUID | None = None
+    rank: int | None = None
+
+    def sent(self, field: str) -> bool:
+        return field in self.model_fields_set
+
+
+class PositionRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    organization_id: UUID
+    title: str
+    description: str | None
+    department_id: UUID | None
+    rank: int | None
+
+
+class MemberPlacementUpdate(OrgWriteModel):
+    """Where one person sits: department, position and reporting line.
+
+    All three are optional and independent - somebody can report to a manager
+    without being in a department yet, which is the normal state on day one.
+    """
+
+    department_id: UUID | None = None
+    position_id: UUID | None = None
+    manager_id: UUID | None = None
+
+    def sent(self, field: str) -> bool:
+        return field in self.model_fields_set
+
+
+class PlacementRead(BaseModel):
+    """One person's place in the chart, resolved for display."""
+
+    user_id: UUID
+    department_id: UUID | None
+    position_id: UUID | None
+    manager_id: UUID | None
+    deputies: list[UUID] = Field(default_factory=list)
+
+
+class OrgStructureRead(BaseModel):
+    """Everything the chart draws, in one response.
+
+    One request rather than one per node: on a real organization the editor would
+    otherwise spend a hundred round trips before drawing anything, and every one
+    of them could see a different version.
+    """
+
+    departments: list[DepartmentRead]
+    positions: list[PositionRead]
+    members: list[MembershipRead]
+    placements: dict[UUID, PlacementRead]
+
+
+class DeputyAdd(OrgWriteModel):
+    deputy_id: UUID
+
+
 class TeamCreate(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     description: str | None = Field(default=None, max_length=2000)

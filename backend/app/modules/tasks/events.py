@@ -27,6 +27,8 @@ TASK_EVENT_NAMES: Final[tuple[str, ...]] = (
     "task.deleted",
     "comment.created",
     "comment.deleted",
+    "task.participant_added",
+    "task.participant_removed",
 )
 
 #: ``discover_modules`` reads this attribute; an empty tuple is valid and means

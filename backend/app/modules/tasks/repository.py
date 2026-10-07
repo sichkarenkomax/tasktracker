@@ -22,7 +22,9 @@ from app.modules.tasks.models import (
     STATUS_ORDER,
     TERMINAL_STATUSES,
     Comment,
+    ParticipantRole,
     Task,
+    TaskParticipant,
     TaskPriority,
     TaskStatus,
 )
@@ -46,7 +48,6 @@ class TaskFilters:
     status: tuple[TaskStatus, ...] = ()
     priority: tuple[TaskPriority, ...] = ()
     assignee_id: UUID | None = None
-    unassigned: bool = False
     #: Only tasks not filed under any project - the inbox as its own view.
     unfiled: bool = False
     creator_id: UUID | None = None
@@ -66,8 +67,6 @@ class TaskFilters:
             clauses.append(Task.priority.in_(self.priority))
         if self.assignee_id is not None:
             clauses.append(Task.assignee_id == self.assignee_id)
-        if self.unassigned:
-            clauses.append(Task.assignee_id.is_(None))
         if self.unfiled:
             clauses.append(Task.project_id.is_(None))
         if self.creator_id is not None:
@@ -223,3 +222,43 @@ class CommentRepository:
     async def delete(self, comment: Comment) -> None:
         await self._session.delete(comment)
         await self._session.flush()
+
+
+class ParticipantRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def list(self, task_id: UUID) -> list[TaskParticipant]:
+        statement = (
+            select(TaskParticipant)
+            .where(TaskParticipant.task_id == task_id)
+            # Co-assignees first, then watchers, each alphabetical: the list is
+            # read as two groups, and an unstable order would make it shuffle.
+            .order_by(TaskParticipant.role, TaskParticipant.user_id)
+        )
+        return await fetch_all(self._session, statement)
+
+    async def get(
+        self, task_id: UUID, *, user_id: UUID, role: ParticipantRole
+    ) -> TaskParticipant | None:
+        return await fetch_one(
+            self._session,
+            select(TaskParticipant).where(
+                TaskParticipant.task_id == task_id,
+                TaskParticipant.user_id == user_id,
+                TaskParticipant.role == role,
+            ),
+        )
+
+    async def add(self, participant: TaskParticipant) -> TaskParticipant:
+        self._session.add(participant)
+        await self._session.flush()
+        return participant
+
+    async def remove(self, task_id: UUID, *, user_id: UUID, role: ParticipantRole) -> bool:
+        participant = await self.get(task_id, user_id=user_id, role=role)
+        if participant is None:
+            return False
+        await self._session.delete(participant)
+        await self._session.flush()
+        return True

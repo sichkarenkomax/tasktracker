@@ -15,6 +15,7 @@ import type { TaskPriority, TaskStatus } from '../types'
 export const STATUS_LABELS: Record<TaskStatus, TranslationKey> = {
   todo: 'status.todo',
   in_progress: 'status.in_progress',
+  deferred: 'status.deferred',
   done: 'status.done',
 }
 

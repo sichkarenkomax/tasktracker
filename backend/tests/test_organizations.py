@@ -113,11 +113,17 @@ class TestRead:
     async def test_lists_only_my_organizations(
         self, client: AsyncClient, owner: dict[str, Any], outsider: dict[str, Any]
     ) -> None:
+        """Each account sees its own organization and not the other's.
+
+        The outsider owns an organization of their own, so the assertion is about
+        the ids on the list rather than about the list being empty - "empty" would
+        also pass for an account whose list was broken.
+        """
         mine = await client.get("/api/v1/organizations", headers=auth_headers(owner["token"]))
         theirs = await client.get("/api/v1/organizations", headers=auth_headers(outsider["token"]))
 
         assert [o["id"] for o in mine.json()] == [owner["organization"]["id"]]
-        assert theirs.json() == []
+        assert [o["id"] for o in theirs.json()] == [outsider["organization"]["id"]]
 
     async def test_returns_the_organization(
         self, client: AsyncClient, owner: dict[str, Any]

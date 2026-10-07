@@ -12,7 +12,14 @@ export interface TaskFieldSelectProps<T extends string> {
   label: string
   value: T | null
   options: ReadonlyArray<{ value: T; label: string }>
-  emptyLabel: string
+  /**
+   * Text for the blank option, which also makes the field clearable.
+   *
+   * Omitted for fields that always have a value - status, priority, the
+   * responsible person. Offering "nothing" there is not an option the API can
+   * accept, so a blank choice is a control that silently does whatever it likes.
+   */
+  emptyLabel?: string
   disabled?: boolean
   onCommit: (next: T | null) => Promise<void>
 }
@@ -63,7 +70,7 @@ export function TaskFieldSelect<T extends string>({
         disabled={disabled || pending}
         onChange={(event) => void commit(event.target.value)}
       >
-        <option value="">{emptyLabel}</option>
+        {emptyLabel === undefined ? null : <option value="">{emptyLabel}</option>}
         {options.map((option) => (
           <option key={option.value} value={option.value}>
             {option.label}

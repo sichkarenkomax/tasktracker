@@ -25,6 +25,9 @@ MEMBER_PERMISSIONS: frozenset[str] = frozenset(
         "team.create",
         "team.update",
         "team.members.manage",
+        # Reading the org chart is not an administrative act: it is how you find
+        # out who to ask. Editing it is, and stays with admins.
+        "orgstructure.view",
         "project.view",
         "project.create",
         "project.update",
@@ -42,6 +45,7 @@ MEMBER_PERMISSIONS: frozenset[str] = frozenset(
 
 ADMIN_PERMISSIONS: frozenset[str] = MEMBER_PERMISSIONS | frozenset(
     {
+        "orgstructure.manage",
         "organization.update",
         "organization.delete",
         "organization.members.manage",
@@ -60,6 +64,9 @@ VIEWER_PERMISSIONS: frozenset[str] = frozenset(
         "user.view",
         "organization.view",
         "team.view",
+        # A viewer may look at the chart but not touch it: knowing the structure
+        # is not a privilege, changing it is.
+        "orgstructure.view",
         "project.view",
         "activity.view",
         # Read-only: a viewer may look at tasks and touch nothing else.

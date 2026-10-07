@@ -1,9 +1,17 @@
 import { useEffect, useState } from 'react'
 
 import { useI18n } from '../../../core/i18n'
+import { Icon } from '../../../core/layout/Icon'
 import type { Member } from '../../../core/organizations/api'
 import { useTaskVocabulary } from './Badges'
 import type { Project } from '../../../core/projects/api'
+import {
+  readSavedFilters,
+  removeSavedFilter,
+  upsertSavedFilter,
+  writeSavedFilters,
+} from './savedFilters'
+import type { SavedFilter } from './savedFilters'
 import { TASK_PRIORITIES, TASK_STATUSES } from '../types'
 import type { TaskFilters, TaskPriority, TaskStatus, TranslationKey } from '../types'
 
@@ -14,7 +22,7 @@ import type { TaskFilters, TaskPriority, TaskStatus, TranslationKey } from '../t
  * only meaningful to this code version while the name stays meaningful across
  * upgrades - and because a pin has to be serialisable into the URL and back.
  */
-export type QuickFilterId = 'status' | 'priority' | 'assignee' | 'project' | 'overdue' | 'unassigned'
+export type QuickFilterId = 'status' | 'priority' | 'assignee' | 'project' | 'overdue'
 
 export const QUICK_FILTERS: ReadonlyArray<{ id: QuickFilterId; label: TranslationKey }> = [
   { id: 'status', label: 'filters.byStatus' },
@@ -22,7 +30,6 @@ export const QUICK_FILTERS: ReadonlyArray<{ id: QuickFilterId; label: Translatio
   { id: 'assignee', label: 'filters.byAssignee' },
   { id: 'project', label: 'columns.column.project' },
   { id: 'overdue', label: 'filters.overdue' },
-  { id: 'unassigned', label: 'filters.unassigned' },
 ]
 
 const STORAGE_KEY = 'tasktracker.quickFilters'
@@ -91,6 +98,10 @@ export function TaskFilterBar({ value, members, projects, onChange }: TaskFilter
   const [term, setTerm] = useState(value.search ?? '')
   const [moreOpen, setMoreOpen] = useState(false)
   const [pins, setPins] = useState<QuickFilterId[]>(readQuickFilters)
+  const [saved, setSaved] = useState<SavedFilter[]>(readSavedFilters)
+  const [savingAs, setSavingAs] = useState(false)
+  const [savedName, setSavedName] = useState('')
+  const [saveError, setSaveError] = useState<string | null>(null)
 
   useEffect(() => setTerm(value.search ?? ''), [value.search])
 
@@ -131,7 +142,6 @@ export function TaskFilterBar({ value, members, projects, onChange }: TaskFilter
     (value.assignee_id ? 1 : 0) +
     (value.project_id ? 1 : 0) +
     (value.overdue ? 1 : 0) +
-    (value.unassigned ? 1 : 0) +
     (value.unfiled ? 1 : 0) +
     (value.search ? 1 : 0)
 
@@ -218,19 +228,6 @@ export function TaskFilterBar({ value, members, projects, onChange }: TaskFilter
             {t('filters.overdue')}
           </label>
         )
-      case 'unassigned':
-        return (
-          <label key="unassigned" className="chip">
-            <input
-              type="checkbox"
-              checked={value.unassigned ?? false}
-              onChange={(event) =>
-                onChange({ ...value, unassigned: event.target.checked || undefined })
-              }
-            />
-            {t('filters.unassigned')}
-          </label>
-        )
       default:
         return null
     }
@@ -265,6 +262,35 @@ export function TaskFilterBar({ value, members, projects, onChange }: TaskFilter
       </div>
 
       <div className="filters__actions">
+        {saved.length > 0 ? (
+          <select
+            className="filters__saved"
+            aria-label={t('savedFilters.title')}
+            value=""
+            onChange={(event) => {
+              const entry = saved.find((item) => item.name === event.target.value)
+              if (entry) onChange({ ...(entry.filters as TaskFilters) })
+            }}
+          >
+            <option value="">{t('savedFilters.title')}</option>
+            {saved.map((entry) => (
+              <option key={entry.name} value={entry.name}>
+                {entry.name}
+              </option>
+            ))}
+          </select>
+        ) : null}
+
+        {activeCount > 0 ? (
+          <button
+            type="button"
+            className="link"
+            onClick={() => setSavingAs((open) => !open)}
+          >
+            {t('savedFilters.save')}
+          </button>
+        ) : null}
+
         <button
           type="button"
           className="button button--ghost"
@@ -285,6 +311,77 @@ export function TaskFilterBar({ value, members, projects, onChange }: TaskFilter
           </button>
         ) : null}
       </div>
+
+      {savingAs ? (
+        <form
+          className="filters__save"
+          onSubmit={(event) => {
+            event.preventDefault()
+            const name = savedName.trim()
+            if (!name) return
+            if (saved.some((entry) => entry.name === name) && !window.confirm(t('savedFilters.overwrite'))) {
+              return
+            }
+            // Paging is not part of what somebody means by "my view", so the
+            // saved filter starts from the first page when it is applied.
+            const { limit: _limit, offset: _offset, ...filters } = value
+            const next = upsertSavedFilter(saved, {
+              name,
+              filters: filters as Record<string, unknown>,
+            })
+            setSaved(next)
+            writeSavedFilters(next)
+            setSavedName('')
+            setSavingAs(false)
+            setSaveError(null)
+          }}
+        >
+          <label>
+            <span>{t('savedFilters.name')}</span>
+            <input
+              autoFocus
+              maxLength={60}
+              value={savedName}
+              onChange={(event) => setSavedName(event.target.value)}
+            />
+          </label>
+          <button type="submit" className="button button--primary">
+            {t('app.save')}
+          </button>
+          <button type="button" className="link" onClick={() => setSavingAs(false)}>
+            {t('app.cancel')}
+          </button>
+          {saveError ? (
+            <span className="field__error" role="alert">
+              {saveError}
+            </span>
+          ) : null}
+        </form>
+      ) : null}
+
+      {saved.length > 0 && moreOpen ? (
+        <div className="filters__saved-list">
+          <span className="muted">{t('savedFilters.title')}</span>
+          {saved.map((entry) => (
+            <span key={entry.name} className="chip">
+              {entry.name}
+              <button
+                type="button"
+                className="icon-button"
+                aria-label={`${t('savedFilters.delete')}: ${entry.name}`}
+                onClick={() => {
+                  if (!window.confirm(t('savedFilters.deleteConfirm', { name: entry.name }))) return
+                  const next = removeSavedFilter(saved, entry.name)
+                  setSaved(next)
+                  writeSavedFilters(next)
+                }}
+              >
+                <Icon name="close" size={12} />
+              </button>
+            </span>
+          ))}
+        </div>
+      ) : null}
 
       {moreOpen ? (
         <div className="filters__more">
@@ -365,7 +462,6 @@ export function filtersFromSearch(search: string): TaskFilters {
     priority: priorities.length ? priorities : undefined,
     project_id: params.get('project') ?? undefined,
     assignee_id: params.get('assignee') ?? undefined,
-    unassigned: flag('unassigned'),
     unfiled: flag('unfiled'),
     overdue: flag('overdue'),
     sort: params.get('sort') ?? 'created_at',
@@ -381,7 +477,6 @@ export function filtersToSearch(filters: TaskFilters): string {
   for (const priority of filters.priority ?? []) params.append('priority', priority)
   if (filters.project_id) params.set('project', filters.project_id)
   if (filters.assignee_id) params.set('assignee', filters.assignee_id)
-  if (filters.unassigned) params.set('unassigned', '1')
   if (filters.unfiled) params.set('unfiled', '1')
   if (filters.overdue) params.set('overdue', '1')
   if (filters.sort && filters.sort !== 'created_at') params.set('sort', filters.sort)

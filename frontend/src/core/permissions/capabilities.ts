@@ -17,6 +17,13 @@ export interface Capabilities {
   canEditTask: boolean
   canComment: boolean
   canDeleteTask: boolean
+  /**
+   * May redraw the organization chart.
+   *
+   * Mirrors `orgstructure.manage`, which admins and the owner hold by default.
+   * Reading the chart is not one of these: everybody may look at it.
+   */
+  canEditOrgStructure: boolean
 }
 
 const VIEWER: Capabilities = {
@@ -25,11 +32,23 @@ const VIEWER: Capabilities = {
   canEditTask: false,
   canComment: false,
   canDeleteTask: false,
+  canEditOrgStructure: false,
 }
 
-const MEMBER: Capabilities = { ...VIEWER, role: 'member', canCreateTask: true, canEditTask: true, canComment: true }
+const MEMBER: Capabilities = {
+  ...VIEWER,
+  role: 'member',
+  canCreateTask: true,
+  canEditTask: true,
+  canComment: true,
+}
 
-const ADMIN: Capabilities = { ...MEMBER, role: 'admin', canDeleteTask: true }
+const ADMIN: Capabilities = {
+  ...MEMBER,
+  role: 'admin',
+  canDeleteTask: true,
+  canEditOrgStructure: true,
+}
 
 const OWNER: Capabilities = { ...ADMIN, role: 'owner' }
 

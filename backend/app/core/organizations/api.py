@@ -10,21 +10,37 @@ from fastapi import APIRouter, Depends, status
 from app.core.auth.dependencies import CurrentUser, SessionDep
 from app.core.dependencies import EventBusDep
 from app.core.errors import NotFoundError
-from app.core.organizations.repository import OrganizationRepository, TeamRepository
+from app.core.organizations.repository import (
+    DepartmentRepository,
+    DeputyRepository,
+    OrganizationRepository,
+    PositionRepository,
+    TeamRepository,
+)
 from app.core.organizations.schemas import (
+    DepartmentCreate,
+    DepartmentRead,
+    DepartmentUpdate,
+    DeputyAdd,
     MemberAdd,
+    MemberPlacementUpdate,
     MemberRoleUpdate,
     MembershipRead,
     OrganizationCreate,
     OrganizationRead,
     OrganizationUpdate,
+    OrgStructureRead,
+    PlacementRead,
+    PositionCreate,
+    PositionRead,
+    PositionUpdate,
     TeamCreate,
     TeamMemberAdd,
     TeamRead,
     TeamUpdate,
     UserSummaryRead,
 )
-from app.core.organizations.service import OrganizationService, TeamService
+from app.core.organizations.service import OrganizationService, OrgStructureService, TeamService
 from app.core.permissions.dependencies import require_permission
 from app.core.permissions.service import AuthorizationService
 from app.core.users.models import User
@@ -411,4 +427,296 @@ async def remove_team_member(
         raise NotFoundError("Team not found")
 
     await TeamService(repository, bus).remove_member(team, actor=user, user_id=user_id)
+    await session.commit()
+
+
+# ---------------------------------------------------------------------------
+# Organization structure
+# ---------------------------------------------------------------------------
+
+
+async def _org_structure(session: SessionDep, bus: EventBusDep) -> OrgStructureService:
+    return OrgStructureService(
+        DepartmentRepository(session),
+        PositionRepository(session),
+        DeputyRepository(session),
+        OrganizationRepository(session),
+        bus,
+    )
+
+
+@router.get(
+    "/organizations/{organization_id}/structure",
+    response_model=OrgStructureRead,
+    summary="Departments, positions, reporting lines and deputies",
+)
+async def read_structure(
+    organization_id: UUID,
+    user: Annotated[User, Depends(require_permission("orgstructure.view"))],
+    session: SessionDep,
+    bus: EventBusDep,
+) -> OrgStructureRead:
+    snapshot = await (await _org_structure(session, bus)).snapshot(organization_id)
+    placements = {
+        member.user_id: PlacementRead(
+            user_id=member.user_id,
+            department_id=member.department_id,
+            position_id=member.position_id,
+            manager_id=member.manager_id,
+            deputies=snapshot.deputies.get(member.user_id, []),
+        )
+        for member, _ in snapshot.members
+    }
+    return OrgStructureRead(
+        departments=[DepartmentRead.model_validate(row) for row in snapshot.departments],
+        positions=[PositionRead.model_validate(row) for row in snapshot.positions],
+        members=[
+            MembershipRead(
+                user_id=member.user_id,
+                role=member.role,
+                joined_at=member.joined_at,
+                user=UserSummaryRead.model_validate(account),
+            )
+            for member, account in snapshot.members
+        ],
+        placements=placements,
+    )
+
+
+@router.post(
+    "/organizations/{organization_id}/departments",
+    response_model=DepartmentRead,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create a department",
+)
+async def create_department(
+    organization_id: UUID,
+    payload: DepartmentCreate,
+    user: Annotated[User, Depends(require_permission("orgstructure.manage"))],
+    session: SessionDep,
+    bus: EventBusDep,
+) -> DepartmentRead:
+    department = await (await _org_structure(session, bus)).create_department(
+        organization_id=organization_id,
+        actor=user,
+        name=payload.name,
+        parent_id=payload.parent_id,
+        description=payload.description,
+    )
+    await session.commit()
+    return DepartmentRead.model_validate(department)
+
+
+@router.patch(
+    "/organizations/{organization_id}/departments/{department_id}",
+    response_model=DepartmentRead,
+    summary="Rename, re-parent or re-head a department",
+)
+async def update_department(
+    organization_id: UUID,
+    department_id: UUID,
+    payload: DepartmentUpdate,
+    user: Annotated[User, Depends(require_permission("orgstructure.manage"))],
+    session: SessionDep,
+    bus: EventBusDep,
+) -> DepartmentRead:
+    repository = DepartmentRepository(session)
+    department = await repository.get(department_id, organization_id=organization_id)
+    if department is None:
+        raise NotFoundError("Department not found")
+
+    updated = await (await _org_structure(session, bus)).update_department(
+        department,
+        actor=user,
+        name=payload.name,
+        description=payload.description,
+        parent_id=payload.parent_id,
+        parent_set=payload.sent("parent_id"),
+        head_id=payload.head_id,
+        head_set=payload.sent("head_id"),
+    )
+    await session.commit()
+    return DepartmentRead.model_validate(updated)
+
+
+@router.delete(
+    "/organizations/{organization_id}/departments/{department_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete a department",
+)
+async def delete_department(
+    organization_id: UUID,
+    department_id: UUID,
+    user: Annotated[User, Depends(require_permission("orgstructure.manage"))],
+    session: SessionDep,
+    bus: EventBusDep,
+) -> None:
+    repository = DepartmentRepository(session)
+    department = await repository.get(department_id, organization_id=organization_id)
+    if department is None:
+        raise NotFoundError("Department not found")
+
+    await (await _org_structure(session, bus)).delete_department(department, actor=user)
+    await session.commit()
+
+
+@router.post(
+    "/organizations/{organization_id}/positions",
+    response_model=PositionRead,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create a position",
+)
+async def create_position(
+    organization_id: UUID,
+    payload: PositionCreate,
+    user: Annotated[User, Depends(require_permission("orgstructure.manage"))],
+    session: SessionDep,
+    bus: EventBusDep,
+) -> PositionRead:
+    position = await (await _org_structure(session, bus)).create_position(
+        organization_id=organization_id,
+        actor=user,
+        title=payload.title,
+        department_id=payload.department_id,
+        description=payload.description,
+        rank=payload.rank,
+    )
+    await session.commit()
+    return PositionRead.model_validate(position)
+
+
+@router.patch(
+    "/organizations/{organization_id}/positions/{position_id}",
+    response_model=PositionRead,
+    summary="Update a position",
+)
+async def update_position(
+    organization_id: UUID,
+    position_id: UUID,
+    payload: PositionUpdate,
+    user: Annotated[User, Depends(require_permission("orgstructure.manage"))],
+    session: SessionDep,
+    bus: EventBusDep,
+) -> PositionRead:
+    position = await PositionRepository(session).get(position_id, organization_id=organization_id)
+    if position is None:
+        raise NotFoundError("Position not found")
+
+    updated = await (await _org_structure(session, bus)).update_position(
+        position,
+        actor=user,
+        title=payload.title,
+        description=payload.description,
+        department_id=payload.department_id,
+        department_set=payload.sent("department_id"),
+        rank=payload.rank,
+        rank_set=payload.sent("rank"),
+    )
+    await session.commit()
+    return PositionRead.model_validate(updated)
+
+
+@router.delete(
+    "/organizations/{organization_id}/positions/{position_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete a position",
+)
+async def delete_position(
+    organization_id: UUID,
+    position_id: UUID,
+    user: Annotated[User, Depends(require_permission("orgstructure.manage"))],
+    session: SessionDep,
+    bus: EventBusDep,
+) -> None:
+    repository = PositionRepository(session)
+    position = await repository.get(position_id, organization_id=organization_id)
+    if position is None:
+        raise NotFoundError("Position not found")
+
+    await (await _org_structure(session, bus)).delete_position(position, actor=user)
+    await session.commit()
+
+
+@router.patch(
+    "/organizations/{organization_id}/members/{user_id}/placement",
+    response_model=PlacementRead,
+    summary="Place a member: department, position and manager",
+)
+async def place_member(
+    organization_id: UUID,
+    user_id: UUID,
+    payload: MemberPlacementUpdate,
+    user: Annotated[User, Depends(require_permission("orgstructure.manage"))],
+    session: SessionDep,
+    bus: EventBusDep,
+) -> PlacementRead:
+    member = await OrganizationRepository(session).get_member(
+        organization_id=organization_id, user_id=user_id
+    )
+    if member is None:
+        raise NotFoundError("That person is not a member of the organization")
+
+    await (await _org_structure(session, bus)).place_member(
+        member,
+        actor=user,
+        department_id=payload.department_id,
+        department_set=payload.sent("department_id"),
+        position_id=payload.position_id,
+        position_set=payload.sent("position_id"),
+        manager_id=payload.manager_id,
+        manager_set=payload.sent("manager_id"),
+    )
+    await session.commit()
+
+    deputies = await DeputyRepository(session).list_for(organization_id, user_id)
+    return PlacementRead(
+        user_id=user_id,
+        department_id=member.department_id,
+        position_id=member.position_id,
+        manager_id=member.manager_id,
+        deputies=deputies,
+    )
+
+
+@router.post(
+    "/organizations/{organization_id}/members/{user_id}/deputies",
+    status_code=status.HTTP_201_CREATED,
+    summary="Record somebody as a deputy",
+)
+async def add_deputy(
+    organization_id: UUID,
+    user_id: UUID,
+    payload: DeputyAdd,
+    user: Annotated[User, Depends(require_permission("orgstructure.manage"))],
+    session: SessionDep,
+    bus: EventBusDep,
+) -> None:
+    await (await _org_structure(session, bus)).add_deputy(
+        organization_id=organization_id,
+        actor=user,
+        user_id=user_id,
+        deputy_id=payload.deputy_id,
+    )
+    await session.commit()
+
+
+@router.delete(
+    "/organizations/{organization_id}/members/{user_id}/deputies/{deputy_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Remove a deputy",
+)
+async def remove_deputy(
+    organization_id: UUID,
+    user_id: UUID,
+    deputy_id: UUID,
+    user: Annotated[User, Depends(require_permission("orgstructure.manage"))],
+    session: SessionDep,
+    bus: EventBusDep,
+) -> None:
+    await (await _org_structure(session, bus)).remove_deputy(
+        organization_id=organization_id,
+        actor=user,
+        user_id=user_id,
+        deputy_id=deputy_id,
+    )
     await session.commit()

@@ -29,11 +29,12 @@ from app.core.projects.models import Project
 from app.core.projects.repository import ProjectRepository
 from app.core.users.models import User
 from app.modules.tasks import permissions as task_permissions
-from app.modules.tasks.models import Task, TaskPriority, TaskStatus, is_done
+from app.modules.tasks.models import ParticipantRole, Task, TaskPriority, TaskStatus, is_done
 from app.modules.tasks.repository import (
     DEFAULT_SORT,
     SORTABLE,
     CommentRepository,
+    ParticipantRepository,
     TaskFilters,
     TaskRepository,
 )
@@ -41,12 +42,18 @@ from app.modules.tasks.schemas import (
     CommentCreate,
     CommentPage,
     CommentRead,
+    ParticipantAdd,
+    ParticipantRead,
     TaskCreate,
     TaskPage,
     TaskRead,
     TaskUpdate,
 )
-from app.modules.tasks.service import CommentService, TaskService
+from app.modules.tasks.service import (
+    CommentService,
+    ParticipantService,
+    TaskService,
+)
 
 router = APIRouter(tags=["tasks"])
 
@@ -83,16 +90,12 @@ async def _load_project(session: SessionDep, project_id: UUID, organization_id: 
     return project
 
 
-async def _validate_assignee(
-    session: SessionDep, organization_id: UUID, assignee_id: UUID | None
-) -> None:
+async def _validate_assignee(session: SessionDep, organization_id: UUID, assignee_id: UUID) -> None:
     """Work can only be handed to somebody inside the tenant.
 
     422 rather than 403: the caller *is* allowed to assign, the value they passed
     is simply not usable.
     """
-    if assignee_id is None:
-        return
     member = await OrganizationRepository(session).get_member(
         organization_id=organization_id, user_id=assignee_id
     )
@@ -103,6 +106,18 @@ async def _validate_assignee(
         )
 
 
+async def _validate_member(session: SessionDep, organization_id: UUID, user_id: UUID) -> None:
+    """Somebody can only be attached to a task from inside the tenant."""
+    member = await OrganizationRepository(session).get_member(
+        organization_id=organization_id, user_id=user_id
+    )
+    if member is None:
+        raise ValidationError(
+            "That person is not a member of the organization",
+            details={"user_id": str(user_id)},
+        )
+
+
 def _filters(
     *,
     organization_id: UUID,
@@ -110,7 +125,6 @@ def _filters(
     status: list[TaskStatus] | None = None,
     priority: list[TaskPriority] | None = None,
     assignee_id: UUID | None = None,
-    unassigned: bool = False,
     unfiled: bool = False,
     creator_id: UUID | None = None,
     due_from: date | None = None,
@@ -124,7 +138,6 @@ def _filters(
         status=tuple(status or ()),
         priority=tuple(priority or ()),
         assignee_id=assignee_id,
-        unassigned=unassigned,
         unfiled=unfiled,
         creator_id=creator_id,
         due_from=due_from,
@@ -172,7 +185,6 @@ async def list_tasks(
     status_: list[TaskStatus] | None = Query(default=None, alias="status"),
     priority: list[TaskPriority] | None = Query(default=None),
     assignee_id: UUID | None = None,
-    unassigned: bool = False,
     unfiled: bool = False,
     creator_id: UUID | None = None,
     due_from: date | None = None,
@@ -191,7 +203,6 @@ async def list_tasks(
             status=status_,
             priority=priority,
             assignee_id=assignee_id,
-            unassigned=unassigned,
             unfiled=unfiled,
             creator_id=creator_id,
             due_from=due_from,
@@ -231,7 +242,8 @@ async def create_task(
     project_id = payload.project_id
     if project_id is not None:
         await _load_project(session, project_id, organization_id)
-    await _validate_assignee(session, organization_id, payload.assignee_id)
+    if payload.assignee_id is not None:
+        await _validate_assignee(session, organization_id, payload.assignee_id)
     task = await TaskService(TaskRepository(session), bus).create(
         organization_id=organization_id,
         project_id=project_id,
@@ -241,6 +253,10 @@ async def create_task(
         priority=payload.priority,
         due_date=payload.due_date,
         assignee_id=payload.assignee_id,
+        planned_start=payload.planned_start,
+        planned_end=payload.planned_end,
+        planned_duration=payload.planned_duration,
+        duration_unit=payload.duration_unit,
     )
     await session.commit()
     return TaskRead.model_validate(task)
@@ -260,7 +276,6 @@ async def list_project_tasks(
     status_: list[TaskStatus] | None = Query(default=None, alias="status"),
     priority: list[TaskPriority] | None = Query(default=None),
     assignee_id: UUID | None = None,
-    unassigned: bool = False,
     creator_id: UUID | None = None,
     due_from: date | None = None,
     due_to: date | None = None,
@@ -283,7 +298,6 @@ async def list_project_tasks(
             status=status_,
             priority=priority,
             assignee_id=assignee_id,
-            unassigned=unassigned,
             creator_id=creator_id,
             due_from=due_from,
             due_to=due_to,
@@ -312,7 +326,6 @@ async def create_project_task(
 ) -> TaskRead:
     project = await _load_project(session, project_id, organization_id)
     await _authorize(session, user, organization_id, task_permissions.CREATE)
-    await _validate_assignee(session, organization_id, payload.assignee_id)
     if payload.project_id is not None and payload.project_id != project.id:
         # The path is the authority here. Accepting a body that disagrees would
         # mean two sources of truth for one field, and the loser would be
@@ -321,6 +334,8 @@ async def create_project_task(
             "project_id is taken from the path; remove it from the body",
             details={"field": "project_id"},
         )
+    if payload.assignee_id is not None:
+        await _validate_assignee(session, organization_id, payload.assignee_id)
 
     task = await TaskService(TaskRepository(session), bus).create(
         organization_id=project.organization_id,
@@ -331,6 +346,10 @@ async def create_project_task(
         priority=payload.priority,
         due_date=payload.due_date,
         assignee_id=payload.assignee_id,
+        planned_start=payload.planned_start,
+        planned_end=payload.planned_end,
+        planned_duration=payload.planned_duration,
+        duration_unit=payload.duration_unit,
     )
     await session.commit()
     return TaskRead.model_validate(task)
@@ -377,6 +396,14 @@ async def update_task(
 
     reassigning = "assignee_id" in payload.model_fields_set
     if reassigning:
+        if payload.assignee_id is None:
+            # The column is NOT NULL and deliberately so: a task with nobody on it
+            # is work that silently does not happen. "Somebody else will pick it
+            # up" is not a state this product has.
+            raise ValidationError(
+                "A task must have a responsible person; send a user_id to hand it over",
+                details={"field": "assignee_id"},
+            )
         await _authorize(session, user, organization_id, task_permissions.ASSIGN)
         await _validate_assignee(session, organization_id, payload.assignee_id)
 
@@ -388,7 +415,7 @@ async def update_task(
         await _load_project(session, payload.project_id, organization_id)
 
     service = TaskService(TaskRepository(session), bus)
-    if reassigning:
+    if reassigning and payload.assignee_id is not None:
         await service.assign(task, actor=user, assignee_id=payload.assignee_id)
     updated = await service.update(
         task,
@@ -402,9 +429,87 @@ async def update_task(
         status=payload.status,
         project_id=payload.project_id,
         project_id_set=refiling,
+        planned_start=payload.planned_start,
+        planned_start_set="planned_start" in payload.model_fields_set,
+        planned_end=payload.planned_end,
+        planned_end_set="planned_end" in payload.model_fields_set,
+        planned_duration=payload.planned_duration,
+        planned_duration_set="planned_duration" in payload.model_fields_set,
+        duration_unit=payload.duration_unit,
     )
     await session.commit()
     return TaskRead.model_validate(updated)
+
+
+# ---------------------------------------------------------------------------
+# participants
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/tasks/{task_id}/participants",
+    response_model=list[ParticipantRead],
+    summary="Co-assignees and watchers of a task",
+)
+async def list_participants(
+    task_id: UUID,
+    organization_id: UUID,
+    user: CurrentUser,
+    session: SessionDep,
+) -> list[ParticipantRead]:
+    await _authorize(session, user, organization_id, task_permissions.VIEW)
+    await _load_task(session, task_id, organization_id)
+    rows = await ParticipantRepository(session).list(task_id)
+    return [ParticipantRead.model_validate(row) for row in rows]
+
+
+@router.post(
+    "/tasks/{task_id}/participants",
+    response_model=ParticipantRead,
+    status_code=status.HTTP_201_CREATED,
+    summary="Attach a co-assignee or a watcher",
+)
+async def add_participant(
+    task_id: UUID,
+    organization_id: UUID,
+    payload: ParticipantAdd,
+    user: CurrentUser,
+    session: SessionDep,
+    bus: EventBusDep,
+) -> ParticipantRead:
+    # Editing rights, not assign rights: attaching somebody is not handing them
+    # the task, and a role that may not assign tasks may still keep the list of
+    # people involved accurate.
+    await _authorize(session, user, organization_id, task_permissions.UPDATE)
+    task = await _load_task(session, task_id, organization_id)
+    await _validate_member(session, organization_id, payload.user_id)
+    participant = await ParticipantService(ParticipantRepository(session), bus).add(
+        task, actor=user, user_id=payload.user_id, role=payload.role
+    )
+    await session.commit()
+    return ParticipantRead.model_validate(participant)
+
+
+@router.delete(
+    "/tasks/{task_id}/participants/{user_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Detach a co-assignee or a watcher",
+)
+async def remove_participant(
+    task_id: UUID,
+    user_id: UUID,
+    organization_id: UUID,
+    role: ParticipantRole,
+    user: CurrentUser,
+    session: SessionDep,
+    bus: EventBusDep,
+) -> None:
+    await _authorize(session, user, organization_id, task_permissions.UPDATE)
+    task = await _load_task(session, task_id, organization_id)
+    await ParticipantService(ParticipantRepository(session), bus).remove(
+        task, actor=user, user_id=user_id, role=role
+    )
+    await session.commit()
 
 
 @router.delete("/tasks/{task_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Delete a task")

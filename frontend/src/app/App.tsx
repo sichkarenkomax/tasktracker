@@ -14,6 +14,7 @@ import { SystemPage } from './pages/SystemPage'
 import { UserProfilePage } from './pages/UserProfilePage'
 import { WelcomePage } from './pages/WelcomePage'
 import { MembersPage } from '../core/organizations/MembersPage'
+import { OrgStructurePage } from '../core/organizations/OrgStructurePage'
 import { UsersPage } from '../core/users/UsersPage'
 import { TaskDetailPage } from '../modules/tasks/pages/TaskDetailPage'
 import { TaskListPage } from '../modules/tasks/pages/TaskListPage'
@@ -54,6 +55,7 @@ export function App() {
                   <Route path="/tasks/:taskId" element={<TaskDetailPage />} />
                   <Route path="/users/me" element={<UserProfilePage />} />
                   <Route path="/members" element={<MembersPage />} />
+                  <Route path="/structure" element={<OrgStructurePage />} />
                   <Route path="/users" element={<UsersPage />} />
                   <Route path="/settings" element={<PortalSettingsPage />} />
                 </Route>

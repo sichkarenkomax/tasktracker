@@ -42,6 +42,8 @@ export function TaskCreateForm({
   const [description, setDescription] = useState('')
   const [priority, setPriority] = useState<TaskPriority | ''>('')
   const [dueDate, setDueDate] = useState('')
+  // The person creating the task is the default responsible one, so the field is
+  // never blank and the common case needs no decision at all.
   const [assigneeId, setAssigneeId] = useState('')
   const [targetProject, setTargetProject] = useState(projectId ?? '')
   const [localError, setLocalError] = useState<string | null>(null)
@@ -80,7 +82,10 @@ export function TaskCreateForm({
       description: description.trim() || null,
       priority: priority === '' ? null : priority,
       due_date: dueDate === '' ? null : dueDate,
-      assignee_id: assigneeId === '' ? null : assigneeId,
+      // Omitted rather than null: the API reads a missing key as "the creator
+      // will do it", and rejects an explicit null because nobody must not be on a
+      // task.
+      ...(assigneeId === '' ? {} : { assignee_id: assigneeId }),
       ...(projectId ? {} : { project_id: targetProject === '' ? null : targetProject }),
     })
     if (created !== null) reset()
@@ -149,8 +154,17 @@ export function TaskCreateForm({
 
         <label>
           <span>{t('tasks.assignee')}</span>
-          <select value={assigneeId} onChange={(event) => setAssigneeId(event.target.value)}>
-            <option value="">{t('tasks.unassigned')}</option>
+          <select
+            value={assigneeId}
+            required
+            onChange={(event) => setAssigneeId(event.target.value)}
+          >
+            {/* No empty option on purpose. A task always has somebody responsible
+                for it, and the server answers 422 to a task without one; offering
+                a blank choice here would only move that error further away. */}
+            <option value="" disabled>
+              {t('tasks.noResponsible')}
+            </option>
             {members.map((member) => (
               <option key={member.user_id} value={member.user_id}>
                 {member.first_name || member.username}

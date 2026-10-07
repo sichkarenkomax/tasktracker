@@ -84,4 +84,113 @@ export const organizationsApi = {
   settings(id: string) {
     return api.get<OrganizationSettings>(`/organizations/${id}/settings`)
   },
+
+  // --- organization structure -------------------------------------------
+
+  /** Departments, positions, reporting lines and deputies in one request. */
+  structure(id: string) {
+    return api.get<OrgStructure>(`/organizations/${id}/structure`)
+  },
+
+  createDepartment(id: string, body: { name: string; parent_id?: string | null }) {
+    return api.post<Department>(`/organizations/${id}/departments`, {
+      name: body.name,
+      parent_id: body.parent_id ?? null,
+    })
+  },
+
+  updateDepartment(
+    id: string,
+    departmentId: string,
+    body: { name?: string; parent_id?: string | null; head_id?: string | null },
+  ) {
+    // Spread rather than a fixed shape: `null` on a key means "clear it" and an
+    // absent key means "leave it alone", so the two cannot be collapsed.
+    return api.patch<Department>(`/organizations/${id}/departments/${departmentId}`, body)
+  },
+
+  deleteDepartment(id: string, departmentId: string) {
+    return api.delete<void>(`/organizations/${id}/departments/${departmentId}`)
+  },
+
+  createPosition(id: string, body: { title: string; rank?: number | null }) {
+    return api.post<OrgPosition>(`/organizations/${id}/positions`, {
+      title: body.title,
+      department_id: null,
+      rank: body.rank ?? null,
+    })
+  },
+
+  updatePosition(id: string, positionId: string, body: { title?: string; rank?: number | null }) {
+    return api.patch<OrgPosition>(`/organizations/${id}/positions/${positionId}`, body)
+  },
+
+  deletePosition(id: string, positionId: string) {
+    return api.delete<void>(`/organizations/${id}/positions/${positionId}`)
+  },
+
+  /** Where one person sits. Only the keys present are changed. */
+  placeMember(
+    id: string,
+    userId: string,
+    body: { department_id?: string | null; position_id?: string | null; manager_id?: string | null },
+  ) {
+    return api.patch<Placement>(
+      `/organizations/${id}/members/${userId}/placement`,
+      body,
+    )
+  },
+
+  addDeputy(id: string, userId: string, deputyId: string) {
+    return api.post<void>(`/organizations/${id}/members/${userId}/deputies`, {
+      deputy_id: deputyId,
+    })
+  },
+
+  removeDeputy(id: string, userId: string, deputyId: string) {
+    return api.delete<void>(`/organizations/${id}/members/${userId}/deputies/${deputyId}`)
+  },
+}
+
+// --- organization structure types ----------------------------------------
+
+export interface Department {
+  id: string
+  organization_id: string
+  name: string
+  description: string | null
+  parent_id: string | null
+  head_id: string | null
+  position: number
+}
+
+export interface OrgPosition {
+  id: string
+  organization_id: string
+  title: string
+  description: string | null
+  department_id: string | null
+  rank: number | null
+}
+
+/** One person's place in the chart, already resolved. */
+export interface Placement {
+  user_id: string
+  department_id: string | null
+  position_id: string | null
+  manager_id: string | null
+  deputies: string[]
+}
+
+/**
+ * The whole chart in one payload.
+ *
+ * `placements` is keyed by user id and covers every member, including those with
+ * nothing recorded - the client should not have to guess which are missing.
+ */
+export interface OrgStructure {
+  departments: Department[]
+  positions: OrgPosition[]
+  members: MembershipWithUser[]
+  placements: Record<string, Placement>
 }

@@ -193,6 +193,25 @@ async def owner(client: AsyncClient) -> dict[str, Any]:
 
 @pytest.fixture
 async def outsider(client: AsyncClient) -> dict[str, Any]:
-    """A registered user that belongs to no organization of its own."""
+    """A registered user that owns an organization of its own.
+
+    Owning one rather than belonging to none is what the tenant-boundary tests
+    need: "not a member here" and "has no organization at all" are different
+    situations, and only the first one proves that authorization - rather than an
+    absent membership - is what refused the request.
+    """
     session = await register_user(client, prefix="outsider")
+    token = session["access_token"]
+    organization = await create_organization(client, token)
+    return {
+        "token": token,
+        "user": session["user"],
+        "organization": organization,
+    }
+
+
+@pytest.fixture
+async def stranger(client: AsyncClient) -> dict[str, Any]:
+    """A registered user that belongs to no organization at all."""
+    session = await register_user(client, prefix="stranger")
     return {"token": session["access_token"], "user": session["user"]}

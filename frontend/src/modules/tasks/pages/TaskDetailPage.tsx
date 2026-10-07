@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 
 import { daysUntil, formatDateTime } from '../../../core/format'
 import { useAsync, useMutation } from '../../../core/hooks/useAsync'
 import { useI18n } from '../../../core/i18n'
+import { Icon } from '../../../core/layout/Icon'
 import { organizationsApi } from '../../../core/organizations/api'
 import type { Member } from '../../../core/organizations/api'
 import { useOrganization } from '../../../core/organizations/OrganizationContext'
@@ -20,20 +21,34 @@ import {
   useTaskVocabulary,
 } from '../components/Badges'
 import { CommentThread } from '../components/CommentThread'
+import { ParticipantList } from '../components/ParticipantList'
+import { PlanningFields } from '../components/PlanningFields'
 import { TaskDateField, TaskFieldSelect } from '../components/TaskFieldSelect'
 import { isDone } from '../types'
-import type { Comment, Task, TaskPriority, TaskStatus, TaskUpdate } from '../types'
+import type {
+  Comment,
+  ParticipantRole,
+  Task,
+  TaskParticipant,
+  TaskPriority,
+  TaskStatus,
+  TaskUpdate,
+} from '../types'
 
 const EMPTY_PAGE = { items: [] as Comment[], total: 0, limit: 0, offset: 0 }
 
 /**
- * Task details (section 31): title, description, the fields, then comments and
- * activity.
+ * Task details (section 31).
  *
- * Every field commits on its own, so a half-finished change to the title never
- * blocks fixing a deadline. Each mutation reloads from the server rather than
- * patching local state, because a PATCH can be refused by the role check or by a
- * business rule, and only the server's version is guaranteed to be true.
+ * Opens in a reading mode: every field shows its value and becomes editable when
+ * clicked. Most visits are reading, and a form open on arrival turns "what is this
+ * task" into "do I dare touch this". Somebody who does want to change several
+ * things at once presses the edit button and gets the whole task as one form.
+ *
+ * Either way each field commits on its own, and every mutation reloads from the
+ * server rather than patching local state, because a PATCH can be refused by the
+ * role check or by a business rule and only the server's version is guaranteed to
+ * be true.
  */
 export function TaskDetailPage() {
   return (
@@ -51,6 +66,7 @@ function TaskDetail() {
   const organizationId = organization?.id ?? null
   const capabilities = useCapabilities(organizationId)
   const { statusOptions, priorityOptions } = useTaskVocabulary()
+  const [wholeTaskOpen, setWholeTaskOpen] = useState(false)
 
   const task = useAsync(
     () =>
@@ -78,6 +94,14 @@ function TaskDetail() {
     [organizationId, taskId],
   )
 
+  const participants = useAsync(
+    () =>
+      organizationId && taskId
+        ? tasksApi.listParticipants(organizationId, taskId)
+        : Promise.resolve([] as TaskParticipant[]),
+    [organizationId, taskId],
+  )
+
   const activity = useAsync(
     () =>
       organizationId && taskId
@@ -86,20 +110,21 @@ function TaskDetail() {
     [organizationId, taskId],
   )
 
-  const refreshAll = useCallback(() => {
-    task.reload()
-    comments.reload()
-    activity.reload()
-  }, [task, comments, activity])
-
   const patch = useMutation<TaskUpdate, void>(async (body) => {
     if (!organizationId || !taskId) return
     await tasksApi.update(organizationId, taskId, body)
     refreshAll()
   })
 
+  const refreshAll = () => {
+    task.reload()
+    comments.reload()
+    participants.reload()
+    activity.reload()
+  }
+
   /**
-   * The fields edit through `runOrThrow`, because each control restores its own
+   * Fields commit through `runOrThrow` because each control restores its own
    * previous value when a save is refused: a rejected status change must not leave
    * the select claiming the task moved when it did not.
    */
@@ -122,6 +147,26 @@ function TaskDetail() {
     if (!organizationId || !taskId) return
     await tasksApi.removeComment(organizationId, taskId, comment.id)
     comments.reload()
+    activity.reload()
+  })
+
+  const addParticipant = useMutation<
+    { userId: string; role: ParticipantRole },
+    void
+  >(async ({ userId, role }) => {
+    if (!organizationId || !taskId) return
+    await tasksApi.addParticipant(organizationId, taskId, userId, role)
+    participants.reload()
+    activity.reload()
+  })
+
+  const removeParticipant = useMutation<
+    { userId: string; role: ParticipantRole },
+    void
+  >(async ({ userId, role }) => {
+    if (!organizationId || !taskId) return
+    await tasksApi.removeParticipant(organizationId, taskId, userId, role)
+    participants.reload()
     activity.reload()
   })
 
@@ -155,8 +200,19 @@ function TaskDetail() {
       <nav className="breadcrumb">
         <Link to="/projects">{t('projects.title')}</Link>
         <span aria-hidden="true"> / </span>
-        <Link to={`/projects/${current.project_id ?? ''}/tasks`}>{t('projects.tasks')}</Link>
-        <span aria-hidden="true"> / </span>
+        {/* A task with no project has no project to go back to; linking
+            `/projects//tasks` produced a route that matched nothing. */}
+        {current.project_id ? (
+          <>
+            <Link to={`/projects/${current.project_id}/tasks`}>{t('projects.tasks')}</Link>
+            <span aria-hidden="true"> / </span>
+          </>
+        ) : (
+          <>
+            <Link to="/tasks">{t('tasks.allTasks')}</Link>
+            <span aria-hidden="true"> / </span>
+          </>
+        )}
         <span>{t('tasks.title')}</span>
       </nav>
 
@@ -168,85 +224,175 @@ function TaskDetail() {
             onCommit={(title) => commitField({ title })}
           />
         </h1>
-        <div className="badges">
-          <StatusBadge status={current.status} />
-          <PriorityBadge priority={current.priority} />
-          <DueDateBadge value={current.due_date} isOverdue={overdue} />
+        <div className="page-header__actions">
+          {canEdit ? (
+            <button
+              type="button"
+              className={wholeTaskOpen ? 'button button--primary' : 'button button--ghost'}
+              aria-pressed={wholeTaskOpen}
+              onClick={() => setWholeTaskOpen((open) => !open)}
+            >
+              <Icon name={wholeTaskOpen ? 'check' : 'edit'} size={15} />
+              {wholeTaskOpen ? t('tasks.doneEditing') : t('tasks.editTask')}
+            </button>
+          ) : null}
         </div>
       </header>
 
+      <div className="badges">
+        <StatusBadge status={current.status} />
+        <PriorityBadge priority={current.priority} />
+        <DueDateBadge value={current.due_date} isOverdue={overdue} />
+      </div>
+
+      {wholeTaskOpen ? (
+        <section className="panel">
+          <h2>{t('tasks.editing')}</h2>
+          <div className="fields">
+            <TaskFieldSelect<TaskStatus>
+              label={t('tasks.status')}
+              value={current.status}
+              options={statusOptions}
+              onCommit={(next) => commitField({ status: next })}
+            />
+            <TaskFieldSelect<TaskPriority>
+              label={t('tasks.priority')}
+              value={current.priority}
+              options={priorityOptions}
+              onCommit={(next) => commitField({ priority: next })}
+            />
+            <TaskFieldSelect<string>
+              label={t('tasks.assignee')}
+              value={current.assignee_id}
+              options={members.map((member) => ({
+                value: member.user_id,
+                label: member.first_name || member.username,
+              }))}
+              // No empty option at all: a task always has somebody responsible,
+              // and a blank choice is a value the API refuses rather than stores.
+              onCommit={(next) => commitField({ assignee_id: next })}
+            />
+            <TaskDateField
+              label={t('tasks.dueDate')}
+              value={current.due_date}
+              onCommit={(next) => commitField({ due_date: next })}
+            />
+            <TaskFieldSelect<string>
+              label={t('columns.column.project')}
+              value={current.project_id}
+              options={projectList.map((project) => ({ value: project.id, label: project.name }))}
+              emptyLabel={t('tasks.noProject')}
+              onCommit={(next) => commitField({ project_id: next })}
+            />
+          </div>
+          <DescriptionEditor
+            value={current.description}
+            onSave={(value) => commitField({ description: value })}
+          />
+        </section>
+      ) : (
+        <>
+          <section className="panel">
+            <h2>{t('tasks.details')}</h2>
+            <p className="muted panel__hint">{t('tasks.readOnlyHint')}</p>
+            <ReadOnlyFields
+              task={current}
+              members={members}
+              projects={projectList}
+              canEdit={canEdit}
+              onCommit={commitField}
+            />
+            <dl className="meta">
+              <dt>{t('app.createdAt')}</dt>
+              <dd>{formatDateTime(current.created_at)}</dd>
+              <dt>{t('app.completedAt')}</dt>
+              <dd>
+                {current.completed_at ? formatDateTime(current.completed_at) : t('tasks.notCompleted')}
+              </dd>
+            </dl>
+          </section>
+
+          <section className="panel">
+            <h2>{t('tasks.description')}</h2>
+            {canEdit ? (
+              <DescriptionEditor
+                value={current.description}
+                onSave={(value) => commitField({ description: value })}
+              />
+            ) : (
+              <p className={current.description ? 'description' : 'muted'}>
+                {current.description || t('tasks.noDescription')}
+              </p>
+            )}
+          </section>
+        </>
+      )}
+
+      {patch.error ? (
+        <p className="notice notice--error" role="alert">
+          {patch.error}
+        </p>
+      ) : null}
+
       <section className="panel">
-        <h2>{t('tasks.details')}</h2>
-        <div className="fields">
-          <TaskFieldSelect<TaskStatus>
-            label={t('tasks.status')}
-            value={current.status}
-            options={statusOptions}
-            emptyLabel=""
+        <h2>
+          <Icon name="calendar" size={15} /> {t('tasks.planning')}
+        </h2>
+        {current.planned_start || current.planned_duration !== null ? (
+          <PlanningFields
+            start={current.planned_start}
+            end={current.planned_end}
+            duration={current.planned_duration}
+            unit={current.duration_unit}
             disabled={!canEdit}
-            onCommit={(next) => commitField({ status: next })}
+            onCommit={commitField}
           />
-          <TaskFieldSelect<TaskPriority>
-            label={t('tasks.priority')}
-            value={current.priority}
-            options={priorityOptions}
-            emptyLabel=""
-            disabled={!canEdit}
-            onCommit={(next) => commitField({ priority: next })}
-          />
-          <TaskFieldSelect<string>
-            label={t('tasks.assignee')}
-            value={current.assignee_id}
-            options={members.map((member) => ({
-              value: member.user_id,
-              label: member.first_name || member.username,
-            }))}
-            emptyLabel={t('tasks.unassigned')}
-            disabled={!canEdit}
-            onCommit={(next) => commitField({ assignee_id: next })}
-          />
-          <TaskDateField
-            label={t('tasks.dueDate')}
-            value={current.due_date}
-            disabled={!canEdit}
-            onCommit={(next) => commitField({ due_date: next })}
-          />
-          <TaskFieldSelect<string>
-            label={t('columns.column.project')}
-            value={current.project_id}
-            options={projectList.map((project) => ({ value: project.id, label: project.name }))}
-            emptyLabel={t('tasks.noProject')}
-            disabled={!canEdit}
-            onCommit={(next) => commitField({ project_id: next })}
-          />
-        </div>
-        {patch.error ? (
-          <p className="notice notice--error" role="alert">
-            {patch.error}
-          </p>
-        ) : null}
-        <dl className="meta">
-          <dt>{t('app.createdAt')}</dt>
-          <dd>{formatDateTime(current.created_at)}</dd>
-          <dt>{t('app.completedAt')}</dt>
-          <dd>{current.completed_at ? formatDateTime(current.completed_at) : t('tasks.notCompleted')}</dd>
-        </dl>
+        ) : (
+          <>
+            <p className="muted">{t('tasks.noPlan')}</p>
+            {canEdit ? (
+              <PlanningFields
+                start={null}
+                end={null}
+                duration={null}
+                unit={current.duration_unit}
+                onCommit={commitField}
+              />
+            ) : null}
+          </>
+        )}
       </section>
 
       <section className="panel">
-        <h2>{t('tasks.description')}</h2>
-        <DescriptionEditor
-          value={current.description}
-          disabled={!canEdit}
-          onSave={(value) => commitField({ description: value })}
+        <h2>{t('tasks.people')}</h2>
+        <ParticipantList
+          reporterId={current.creator_id}
+          responsibleId={current.assignee_id}
+          participants={participants.data ?? []}
+          members={members}
+          canEdit={canEdit}
+          onAdd={(userId, role) => addParticipant.runOrThrow({ userId, role })}
+          onRemove={(userId, role) => removeParticipant.runOrThrow({ userId, role })}
         />
+        {addParticipant.error ? (
+          <p className="notice notice--error" role="alert">
+            {addParticipant.error}
+          </p>
+        ) : null}
+        {removeParticipant.error ? (
+          <p className="notice notice--error" role="alert">
+            {removeParticipant.error}
+          </p>
+        ) : null}
       </section>
 
       <CommentThread
         comments={comments.data?.items ?? []}
         members={members}
         canComment={capabilities.canComment}
-        canDelete={(comment) => comment.author_id === current.creator_id || capabilities.canDeleteTask}
+        canDelete={(comment) =>
+          comment.author_id === current.creator_id || capabilities.canDeleteTask
+        }
         onAdd={(content) => addComment.runOrThrow(content)}
         onDelete={(comment) => removeComment.runOrThrow(comment)}
       />
@@ -276,11 +422,201 @@ function TaskDetail() {
               if (window.confirm(warning)) void removeTask.run()
             }}
           >
+            <Icon name="trash" size={15} />
             {t('tasks.deleteTask')}
           </button>
         </footer>
       ) : null}
     </section>
+  )
+}
+
+/**
+ * The reading view: values as text, a control as soon as the field is touched.
+ *
+ * The hover and focus outlines are the affordance - a field that looks like text
+ * and turns into a select on click is the whole interaction, so it has to look
+ * tappable on approach.
+ */
+function ReadOnlyFields({
+  task,
+  members,
+  projects,
+  canEdit,
+  onCommit,
+}: {
+  task: Task
+  members: Member[]
+  projects: Project[]
+  canEdit: boolean
+  onCommit: (body: TaskUpdate) => Promise<void>
+}) {
+  const { t } = useI18n()
+  const { statusLabel, priorityLabel, statusOptions, priorityOptions } = useTaskVocabulary()
+  const [editing, setEditing] = useState<string | null>(null)
+
+  const nameOf = (id: string): string => {
+    const member = members.find((item) => item.user_id === id)
+    return member ? member.first_name || member.username : t('activity.someone')
+  }
+
+  // The value is the button. A separate "edit" control next to every row would
+  // put eight affordances on screen for a page most people only read, and the
+  // dashed underline on the value says the same thing where the eye already is.
+  const begin = (field: string) => () => {
+    if (canEdit) setEditing(field)
+  }
+
+  /** The reading state of a field: text that opens its editor when pressed. */
+  const read = (field: string, content: React.ReactNode) =>
+    canEdit ? (
+      <button type="button" className="readfields__value" onClick={begin(field)}>
+        {content}
+      </button>
+    ) : (
+      <span className="readfields__value readfields__value--static">{content}</span>
+    )
+
+  const memberOptions = members.map((member) => ({
+    value: member.user_id,
+    label: member.first_name || member.username,
+  }))
+  const projectOptions = projects.map((project) => ({ value: project.id, label: project.name }))
+
+  return (
+    <dl className="readfields">
+      <ReadRow label={t('tasks.status')} editing={editing === 'status'} onStop={() => setEditing(null)}>
+        {editing === 'status' ? (
+          <TaskFieldSelect<TaskStatus>
+            label={t('tasks.status')}
+            value={task.status}
+            options={statusOptions}
+            onCommit={async (next) => {
+              await onCommit({ status: next })
+              setEditing(null)
+            }}
+          />
+        ) : (
+          read('status', statusLabel(task.status))
+        )}
+      </ReadRow>
+
+      <ReadRow
+        label={t('tasks.priority')}
+        editing={editing === 'priority'}
+        onStop={() => setEditing(null)}
+      >
+        {editing === 'priority' ? (
+          <TaskFieldSelect<TaskPriority>
+            label={t('tasks.priority')}
+            value={task.priority}
+            options={priorityOptions}
+            onCommit={async (next) => {
+              await onCommit({ priority: next })
+              setEditing(null)
+            }}
+          />
+        ) : (
+          read('priority', priorityLabel(task.priority))
+        )}
+      </ReadRow>
+
+      <ReadRow
+        label={t('tasks.assignee')}
+        editing={editing === 'assignee'}
+        onStop={() => setEditing(null)}
+      >
+        {editing === 'assignee' ? (
+          <TaskFieldSelect<string>
+            label={t('tasks.assignee')}
+            value={task.assignee_id}
+            options={memberOptions}
+            onCommit={async (next) => {
+              await onCommit({ assignee_id: next })
+              setEditing(null)
+            }}
+          />
+        ) : (
+          read('assignee', nameOf(task.assignee_id))
+        )}
+      </ReadRow>
+
+      <ReadRow label={t('tasks.dueDate')} editing={editing === 'due'} onStop={() => setEditing(null)}>
+        {editing === 'due' ? (
+          <TaskDateField
+            label={t('tasks.dueDate')}
+            value={task.due_date}
+            onCommit={async (next) => {
+              await onCommit({ due_date: next })
+              setEditing(null)
+            }}
+          />
+        ) : (
+          read(
+            'due',
+            task.due_date ? task.due_date : <span className="muted">{t('tasks.noDeadline')}</span>,
+          )
+        )}
+      </ReadRow>
+
+      <ReadRow
+        label={t('columns.column.project')}
+        editing={editing === 'project'}
+        onStop={() => setEditing(null)}
+      >
+        {editing === 'project' ? (
+          <TaskFieldSelect<string>
+            label={t('columns.column.project')}
+            value={task.project_id}
+            options={projectOptions}
+            emptyLabel={t('tasks.noProject')}
+            onCommit={async (next) => {
+              await onCommit({ project_id: next })
+              setEditing(null)
+            }}
+          />
+        ) : (
+          read(
+            'project',
+            task.project_id
+              ? (projects.find((project) => project.id === task.project_id)?.name ??
+                t('tasks.unknownProject'))
+              : t('tasks.noProject'),
+          )
+        )}
+      </ReadRow>
+
+      {!canEdit ? <p className="muted">{t('tasks.cannotEdit')}</p> : null}
+    </dl>
+  )
+}
+
+function ReadRow({
+  label,
+  editing,
+  onStop,
+  children,
+}: {
+  label: string
+  editing: boolean
+  onStop: () => void
+  children: React.ReactNode
+}) {
+  return (
+    <div className={editing ? 'readfields__row readfields__row--editing' : 'readfields__row'}>
+      <dt className="readfields__label">
+        {editing ? (
+          <button type="button" className="link" onClick={onStop}>
+            {label}
+          </button>
+        ) : (
+          // Pressing the label is the affordance: the value looks like text, and
+          // this is how a reader finds out it is editable at all.
+          <span>{label}</span>
+        )}
+      </dt>
+      <dd className="readfields__cell">{children}</dd>
+    </div>
   )
 }
 
@@ -354,11 +690,9 @@ function TaskTitleEditor({
 
 function DescriptionEditor({
   value,
-  disabled,
   onSave,
 }: {
   value: string | null
-  disabled?: boolean
   onSave: (value: string | null) => Promise<void>
 }) {
   const { t } = useI18n()
@@ -367,27 +701,25 @@ function DescriptionEditor({
   const [error, setError] = useState<string | null>(null)
   const [pending, setPending] = useState(false)
 
-  // A save that succeeded leaves the editor open until the server value arrives,
-  // so keep in step with it rather than with the previous value.
+  // Keep in step with the server value rather than the previous one, so an edit
+  // made elsewhere does not get overwritten by a stale draft.
   useEffect(() => setDraft(value ?? ''), [value])
 
-  if (disabled || !dirty) {
+  if (!dirty) {
     return (
       <div>
         <p className={value ? 'description' : 'muted'}>{value || t('tasks.noDescription')}</p>
-        {!disabled ? (
-          <button
-            type="button"
-            className="link"
-            onClick={() => {
-              setDraft(value ?? '')
-              setError(null)
-              setDirty(true)
-            }}
-          >
-            {value ? t('app.edit') : t('tasks.addDescription')}
-          </button>
-        ) : null}
+        <button
+          type="button"
+          className="link"
+          onClick={() => {
+            setDraft(value ?? '')
+            setError(null)
+            setDirty(true)
+          }}
+        >
+          {value ? t('app.edit') : t('tasks.addDescription')}
+        </button>
       </div>
     )
   }

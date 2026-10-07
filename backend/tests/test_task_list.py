@@ -119,20 +119,21 @@ class TestFiltering:
         assert sorted(_titles(page)) == ["Fix the login redirect", "Write the quarterly report"]
 
     async def test_by_assignee(self, client: AsyncClient, owner: dict[str, Any]) -> None:
+        """Every task falls to its creator, so "my tasks" is the whole seeded set."""
         await _seed(client, owner)
 
         page = await _list(client, owner, assignee_id=owner["user"]["id"])
 
-        # Nothing in the fixture is assigned, so filtering by anybody returns
-        # nothing - which is exactly the "my tasks" view on day one.
-        assert page["items"] == []
-
-    async def test_unassigned(self, client: AsyncClient, owner: dict[str, Any]) -> None:
-        project_id = await _seed(client, owner)
-
-        page = await _list(client, owner, project_id=project_id, unassigned=True)
-
         assert page["total"] == 5
+
+    async def test_by_somebody_else_is_empty(
+        self, client: AsyncClient, owner: dict[str, Any], outsider: dict[str, Any]
+    ) -> None:
+        await _seed(client, owner)
+
+        page = await _list(client, owner, assignee_id=outsider["user"]["id"])
+
+        assert page["items"] == []
 
     async def test_overdue_excludes_finished_work(
         self, client: AsyncClient, owner: dict[str, Any]

@@ -6,11 +6,19 @@
  * wrong rows.
  */
 
-export const TASK_STATUSES = ['todo', 'in_progress', 'done'] as const
+export const TASK_STATUSES = ['todo', 'in_progress', 'deferred', 'done'] as const
 export type TaskStatus = (typeof TASK_STATUSES)[number]
 
 export const TASK_PRIORITIES = ['low', 'medium', 'high', 'urgent'] as const
 export type TaskPriority = (typeof TASK_PRIORITIES)[number]
+
+/** Units a planned duration can be counted in. */
+export const DURATION_UNITS = ['minutes', 'hours', 'days', 'weeks', 'months'] as const
+export type DurationUnit = (typeof DURATION_UNITS)[number]
+
+/** How somebody is attached to a task beyond being responsible for it. */
+export const PARTICIPANT_ROLES = ['co_assignee', 'watcher'] as const
+export type ParticipantRole = (typeof PARTICIPANT_ROLES)[number]
 
 export interface Task {
   id: string
@@ -21,12 +29,25 @@ export interface Task {
   description: string | null
   status: TaskStatus
   priority: TaskPriority
-  assignee_id: string | null
+  /** Mandatory: a task always has somebody responsible for it. */
+  assignee_id: string
+  /** The reporter. Filled in at creation and not editable. */
   creator_id: string
   due_date: string | null
   completed_at: string | null
+  planned_start: string | null
+  planned_end: string | null
+  planned_duration: number | null
+  duration_unit: DurationUnit
   created_at: string
   updated_at: string
+}
+
+export interface TaskParticipant {
+  task_id: string
+  user_id: string
+  role: ParticipantRole
+  created_at: string
 }
 
 export interface TaskPage {
@@ -78,6 +99,10 @@ export interface TaskCreate {
   priority?: TaskPriority | null
   due_date?: string | null
   assignee_id?: string | null
+  planned_start?: string | null
+  planned_end?: string | null
+  planned_duration?: number | null
+  duration_unit?: DurationUnit | null
   /** Only used by the flat `createUnfiled`; the project route takes it from the URL. */
   project_id?: string | null
 }
@@ -90,6 +115,10 @@ export interface TaskCreate {
  * "key set to null", and `JSON.stringify` drops undefined keys, so leaving a
  * field undefined clears nothing while passing null clears it. Getting this
  * backwards silently deletes a deadline or files a task back into the inbox.
+ *
+ * `assignee_id` is the one nullable field that may not be sent as null: a task
+ * always has somebody responsible for it, and the API answers 422 rather than
+ * accepting a task nobody owns.
  */
 export interface TaskUpdate {
   title?: string
@@ -99,6 +128,10 @@ export interface TaskUpdate {
   assignee_id?: string | null
   status?: TaskStatus | null
   project_id?: string | null
+  planned_start?: string | null
+  planned_end?: string | null
+  planned_duration?: number | null
+  duration_unit?: DurationUnit | null
 }
 
 export interface TaskFilters {
@@ -106,7 +139,6 @@ export interface TaskFilters {
   priority?: TaskPriority[]
   project_id?: string
   assignee_id?: string
-  unassigned?: boolean
   /** Only tasks not filed under any project. */
   unfiled?: boolean
   overdue?: boolean

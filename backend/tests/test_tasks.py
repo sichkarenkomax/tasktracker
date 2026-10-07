@@ -65,11 +65,39 @@ class TestCreate:
 
         assert task["status"] == "todo"
         assert task["priority"] == "medium"
-        assert task["assignee_id"] is None
         assert task["due_date"] is None
         assert task["completed_at"] is None
         assert task["creator_id"] == owner["user"]["id"]
         assert task["organization_id"] == owner["organization"]["id"]
+
+    async def test_the_creator_becomes_the_responsible_person(
+        self, client: AsyncClient, owner: dict[str, Any]
+    ) -> None:
+        """Nobody named a responsible person, and the column forbids that.
+
+        Falling back to the creator is the only answer available at that moment,
+        and it keeps a client from having to ask "who is this for?" before it can
+        save anything.
+        """
+        task = await _task(client, owner)
+
+        assert task["assignee_id"] == owner["user"]["id"]
+
+    async def test_a_named_responsible_person_is_kept(
+        self, client: AsyncClient, owner: dict[str, Any], outsider: dict[str, Any]
+    ) -> None:
+        await _add_member(client, owner, outsider)
+        project_id = (await _project(client, owner))["id"]
+
+        response = await client.post(
+            f"/api/v1/projects/{project_id}/tasks",
+            params={"organization_id": owner["organization"]["id"]},
+            json={"title": "Handed over", "assignee_id": outsider["user"]["id"]},
+            headers=auth_headers(owner["token"]),
+        )
+
+        assert response.status_code == 201, response.text
+        assert response.json()["assignee_id"] == outsider["user"]["id"]
 
     async def test_blank_title_is_rejected(
         self, client: AsyncClient, owner: dict[str, Any]

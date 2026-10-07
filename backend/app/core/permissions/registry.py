@@ -34,6 +34,11 @@ CORE_PERMISSIONS: Final[frozenset[str]] = frozenset(
         "team.update",
         "team.delete",
         "team.members.manage",
+        # Organization structure: departments, positions, reporting lines.
+        # Split in two on purpose - almost everybody needs to see who reports to
+        # whom, and almost nobody should be able to redraw the chart.
+        "orgstructure.view",
+        "orgstructure.manage",
         # Projects
         "project.view",
         "project.create",

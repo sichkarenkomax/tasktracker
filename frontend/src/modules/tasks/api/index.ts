@@ -4,10 +4,12 @@ import type {
   ActivityPage,
   Comment,
   CommentPage,
+  ParticipantRole,
   Task,
   TaskCreate,
   TaskFilters,
   TaskPage,
+  TaskParticipant,
   TaskUpdate,
 } from '../types'
 
@@ -53,7 +55,7 @@ export const tasksApi = {
 
   create(organizationId: string, projectId: string, payload: TaskCreate): Promise<Task> {
     return api.post<Task>(`/projects/${projectId}/tasks${buildQuery(tenant(organizationId))}`, {
-      title: payload.title,
+      ...payload,
       description: payload.description ?? null,
       priority: payload.priority ?? null,
       due_date: payload.due_date ?? null,
@@ -70,7 +72,7 @@ export const tasksApi = {
    */
   createUnfiled(organizationId: string, payload: TaskCreate): Promise<Task> {
     return api.post<Task>(`/tasks${buildQuery(tenant(organizationId))}`, {
-      title: payload.title,
+      ...payload,
       description: payload.description ?? null,
       priority: payload.priority ?? null,
       due_date: payload.due_date ?? null,
@@ -100,6 +102,35 @@ export const tasksApi = {
   removeComment(organizationId: string, taskId: string, commentId: string): Promise<void> {
     return api.delete<void>(
       `/tasks/${taskId}/comments/${commentId}${buildQuery(tenant(organizationId))}`,
+    )
+  },
+
+  listParticipants(organizationId: string, taskId: string): Promise<TaskParticipant[]> {
+    return api.get<TaskParticipant[]>(
+      `/tasks/${taskId}/participants${buildQuery(tenant(organizationId))}`,
+    )
+  },
+
+  addParticipant(
+    organizationId: string,
+    taskId: string,
+    userId: string,
+    role: ParticipantRole,
+  ): Promise<TaskParticipant> {
+    return api.post<TaskParticipant>(
+      `/tasks/${taskId}/participants${buildQuery(tenant(organizationId))}`,
+      { user_id: userId, role },
+    )
+  },
+
+  removeParticipant(
+    organizationId: string,
+    taskId: string,
+    userId: string,
+    role: ParticipantRole,
+  ): Promise<void> {
+    return api.delete<void>(
+      `/tasks/${taskId}/participants/${userId}${buildQuery(tenant(organizationId, { role }))}`,
     )
   },
 }

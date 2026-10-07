@@ -466,6 +466,150 @@ def main() -> int:
     )
     check("owner deletes the inbox task", status, 204)
 
+    # --- a responsible person is not optional --------------------------------
+    # A task with nobody on it is work that silently does not happen, so the
+    # column refuses null and the API refuses to hand one over.
+    status, owned = call(
+        "POST",
+        f"/api/v1/tasks?organization_id={organization_id}",
+        token=assignee_token,
+        body={"title": "Nobody named a responsible person"},
+    )
+    check("create a task naming nobody", status, 201)
+    check("the creator becomes responsible", owned["assignee_id"], assignee_id)
+    check("the reporter is remembered separately", owned["creator_id"], assignee_id)
+    owned_id = str(owned["id"])
+
+    status, _ = call(
+        "PATCH",
+        f"/api/v1/tasks/{owned_id}?organization_id={organization_id}",
+        token=assignee_token,
+        body={"assignee_id": None},
+    )
+    check("dropping the responsible person is refused", status, 422)
+
+    status, handed = call(
+        "PATCH",
+        f"/api/v1/tasks/{owned_id}?organization_id={organization_id}",
+        token=assignee_token,
+        body={"assignee_id": owner_id},
+    )
+    check("handing a task over is allowed", status, 200)
+    check("new responsible person recorded", handed["assignee_id"], owner_id)
+
+    # --- a fourth status: deferred --------------------------------------------
+    status, parked = call(
+        "PATCH",
+        f"/api/v1/tasks/{owned_id}?organization_id={organization_id}",
+        token=owner_token,
+        body={"status": "deferred"},
+    )
+    check("a task can be parked", status, 200)
+    check("status recorded", parked["status"], "deferred")
+    check("parked work is not finished", parked["completed_at"], None)
+
+    status, page = call(
+        "GET",
+        f"/api/v1/projects/{project_id}/tasks?organization_id={organization_id}&status=deferred",
+        token=owner_token,
+    )
+    check("filter by the parked status", status, 200)
+
+    # --- co-assignees and watchers -------------------------------------------
+    # The viewer is neither the reporter nor the responsible person of this task,
+    # which is the only way somebody can be attached at all: adding either of them
+    # again would be a second, contradictory answer to a question the task already
+    # answers.
+    status, _ = call(
+        "POST",
+        f"/api/v1/tasks/{owned_id}/participants?organization_id={organization_id}",
+        token=owner_token,
+        body={"user_id": assignee_id, "role": "co_assignee"},
+    )
+    check("the reporter cannot also be attached", status, 422)
+
+    status, _ = call(
+        "POST",
+        f"/api/v1/tasks/{owned_id}/participants?organization_id={organization_id}",
+        token=owner_token,
+        body={"user_id": viewer_id, "role": "co_assignee"},
+    )
+    check("attach a co-assignee", status, 201)
+
+    status, _ = call(
+        "POST",
+        f"/api/v1/tasks/{owned_id}/participants?organization_id={organization_id}",
+        token=owner_token,
+        body={"user_id": viewer_id, "role": "watcher"},
+    )
+    check("the same person can also watch", status, 201)
+
+    status, listed = call(
+        "GET",
+        f"/api/v1/tasks/{owned_id}/participants?organization_id={organization_id}",
+        token=owner_token,
+    )
+    check("both roles are listed", status, 200)
+    check("two rows for one person", len(listed), 2)
+
+    status, _ = call(
+        "POST",
+        f"/api/v1/tasks/{owned_id}/participants?organization_id={organization_id}",
+        token=viewer_token,
+        body={"user_id": assignee_id, "role": "watcher"},
+    )
+    check("a viewer cannot attach anybody", status, 403)
+
+    status, _ = call(
+        "DELETE",
+        f"/api/v1/tasks/{owned_id}/participants/{viewer_id}"
+        f"?organization_id={organization_id}&role=watcher",
+        token=owner_token,
+    )
+    check("detach a watcher", status, 204)
+
+    status, listed = call(
+        "GET",
+        f"/api/v1/tasks/{owned_id}/participants?organization_id={organization_id}",
+        token=owner_token,
+    )
+    check("only the co-assignee is left", len(listed), 1)
+
+    # --- planning -------------------------------------------------------------
+    status, planned = call(
+        "PATCH",
+        f"/api/v1/tasks/{owned_id}?organization_id={organization_id}",
+        token=owner_token,
+        body={
+            "planned_start": "2027-01-31T09:00:00Z",
+            "planned_duration": 1,
+            "duration_unit": "months",
+        },
+    )
+    check("plan a window from a duration", status, 200)
+    check("duration recorded", planned["planned_duration"], 1)
+    # One month after 31 January is the end of February, not 3 March.
+    check(
+        "months are calendar aware",
+        str(planned["planned_end"]).startswith("2027-02-28T09:00"),
+        True,
+    )
+
+    status, _ = call(
+        "PATCH",
+        f"/api/v1/tasks/{owned_id}?organization_id={organization_id}",
+        token=owner_token,
+        body={"planned_start": "2027-01-10T09:00:00Z", "planned_end": "2027-01-01T09:00:00Z"},
+    )
+    check("an end before the start is refused", status, 422)
+
+    status, _ = call(
+        "DELETE",
+        f"/api/v1/tasks/{owned_id}?organization_id={organization_id}",
+        token=owner_token,
+    )
+    check("clean up the planning task", status, 204)
+
     # --- members and roles ----------------------------------------------------
     status, members = call(
         "GET", f"/api/v1/organizations/{organization_id}/members", token=owner_token

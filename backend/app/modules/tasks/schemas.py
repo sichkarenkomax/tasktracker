@@ -7,7 +7,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.modules.tasks.models import TaskPriority, TaskStatus
+from app.modules.tasks.models import DurationUnit, ParticipantRole, TaskPriority, TaskStatus
 from app.modules.tasks.repository import DEFAULT_SORT, SORTABLE
 
 
@@ -19,11 +19,28 @@ class WriteModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-class TaskCreate(WriteModel):
+class PlanningFields(WriteModel):
+    """The planned window, shared by create and update.
+
+    On update every field needs a sentinel for the same reason ``due_date`` does:
+    omitting the key must mean "leave it alone", and only an explicit ``null``
+    clears the plan.
+    """
+
+    planned_start: datetime | None = None
+    planned_end: datetime | None = None
+    planned_duration: int | None = Field(default=None, ge=0)
+    duration_unit: DurationUnit | None = None
+
+
+class TaskCreate(PlanningFields):
     title: str = Field(min_length=1, max_length=300)
     description: str | None = Field(default=None, max_length=20_000)
     priority: TaskPriority | None = None
     due_date: date | None = None
+    #: Optional on the wire even though the column is not: a client that omits it
+    #: gets the creator, which is the only sensible default for "whose work is
+    #: this" at the moment it is written down.
     assignee_id: UUID | None = None
     #: Only meaningful on the flat ``POST /tasks``. The nested route takes the
     #: project from its path, so sending it there is a 422 rather than a value
@@ -31,7 +48,7 @@ class TaskCreate(WriteModel):
     project_id: UUID | None = None
 
 
-class TaskUpdate(WriteModel):
+class TaskUpdate(PlanningFields):
     """Every field is optional; omitted means "leave as it is".
 
     ``due_date`` needs the sentinel: sending ``null`` must clear the deadline,
@@ -43,6 +60,7 @@ class TaskUpdate(WriteModel):
     description: str | None = Field(default=None, max_length=20_000)
     priority: TaskPriority | None = None
     due_date: date | None = None
+    #: Null is refused rather than honoured - see the comment in ``assign``.
     assignee_id: UUID | None = None
     status: TaskStatus | None = None
     #: Lets a task be filed under a project, or moved to another one, without a
@@ -61,10 +79,14 @@ class TaskRead(BaseModel):
     description: str | None
     status: TaskStatus
     priority: TaskPriority
-    assignee_id: UUID | None
+    assignee_id: UUID
     creator_id: UUID
     due_date: date | None
     completed_at: datetime | None
+    planned_start: datetime | None
+    planned_end: datetime | None
+    planned_duration: int | None
+    duration_unit: DurationUnit
     created_at: datetime
     updated_at: datetime
 
@@ -100,6 +122,20 @@ class CommentPage(BaseModel):
     total: int
     limit: int
     offset: int
+
+
+class ParticipantRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    task_id: UUID
+    user_id: UUID
+    role: ParticipantRole
+    created_at: datetime
+
+
+class ParticipantAdd(WriteModel):
+    user_id: UUID
+    role: ParticipantRole
 
 
 #: Exposed so the API layer can reject an unknown sort field with 422 instead of
