@@ -10,6 +10,7 @@ import { useI18n, LOCALES } from '../../core/i18n'
 import type { Locale } from '../../core/i18n'
 import { getTheme, setTheme } from '../../core/theme/theme'
 import type { Theme } from '../../core/theme/theme'
+import { Listbox } from '../../core/ui/Listbox'
 
 /**
  * The signed-in person's own settings.
@@ -125,16 +126,13 @@ export function UserProfilePage() {
         <h2>{t('app.language')}</h2>
         <label className="field">
           <span className="visually-hidden">{t('app.language')}</span>
-          <select
+          <Listbox<Locale>
             value={locale}
-            onChange={(event) => setLocale(event.target.value as Locale)}
-          >
-            {LOCALES.map((entry) => (
-              <option key={entry.id} value={entry.id}>
-                {entry.label}
-              </option>
-            ))}
-          </select>
+            options={LOCALES.map((entry) => ({ value: entry.id, label: entry.label }))}
+            onChange={(next) => {
+              if (next !== null) setLocale(next)
+            }}
+          />
         </label>
       </section>
 
@@ -142,17 +140,18 @@ export function UserProfilePage() {
         <h2>{t('settings.theme')}</h2>
         <label className="field">
           <span className="visually-hidden">{t('settings.theme')}</span>
-          <select
+          <Listbox<Theme>
             value={theme}
-            onChange={(event) => {
-              const next = event.target.value as Theme
+            options={[
+              { value: 'gold', label: t('settings.themeGold') },
+              { value: 'blue', label: t('settings.themeBlue') },
+            ]}
+            onChange={(next) => {
+              if (next === null) return
               chooseTheme(next)
               setTheme(next)
             }}
-          >
-            <option value="gold">{t('settings.themeGold')}</option>
-            <option value="blue">{t('settings.themeBlue')}</option>
-          </select>
+          />
         </label>
       </section>
 

@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { useI18n } from '../../../core/i18n'
 import { Icon } from '../../../core/layout/Icon'
 import type { Member } from '../../../core/organizations/api'
+import { Listbox } from '../../../core/ui/Listbox'
 import { useTaskVocabulary } from './Badges'
 import type { Project } from '../../../core/projects/api'
 import {
@@ -183,38 +184,29 @@ export function TaskFilterBar({ value, members, projects, onChange }: TaskFilter
         return (
           <label key="assignee" className="filter-select">
             <span>{t('filters.byAssignee')}</span>
-            <select
-              value={value.assignee_id ?? ''}
-              onChange={(event) =>
-                onChange({ ...value, assignee_id: event.target.value || undefined })
-              }
-            >
-              <option value="">{t('tasks.anyone')}</option>
-              {members.map((member) => (
-                <option key={member.user_id} value={member.user_id}>
-                  {member.first_name || member.username}
-                </option>
-              ))}
-            </select>
+            <Listbox<string>
+              value={value.assignee_id ?? null}
+              options={members.map((member) => ({
+                value: member.user_id,
+                label: member.first_name || member.username,
+              }))}
+              placeholder={t('tasks.anyone')}
+              clearable
+              onChange={(next) => onChange({ ...value, assignee_id: next ?? undefined })}
+            />
           </label>
         )
       case 'project':
         return (
           <label key="project" className="filter-select">
             <span>{t('columns.column.project')}</span>
-            <select
-              value={value.project_id ?? ''}
-              onChange={(event) =>
-                onChange({ ...value, project_id: event.target.value || undefined })
-              }
-            >
-              <option value="">{t('tasks.anyone')}</option>
-              {projects.map((project) => (
-                <option key={project.id} value={project.id}>
-                  {project.name}
-                </option>
-              ))}
-            </select>
+            <Listbox<string>
+              value={value.project_id ?? null}
+              options={projects.map((project) => ({ value: project.id, label: project.name }))}
+              placeholder={t('tasks.anyone')}
+              clearable
+              onChange={(next) => onChange({ ...value, project_id: next ?? undefined })}
+            />
           </label>
         )
       case 'overdue':
@@ -263,22 +255,17 @@ export function TaskFilterBar({ value, members, projects, onChange }: TaskFilter
 
       <div className="filters__actions">
         {saved.length > 0 ? (
-          <select
+          <Listbox<string>
             className="filters__saved"
             aria-label={t('savedFilters.title')}
-            value=""
-            onChange={(event) => {
-              const entry = saved.find((item) => item.name === event.target.value)
+            value={null}
+            options={saved.map((entry) => ({ value: entry.name, label: entry.name }))}
+            placeholder={t('savedFilters.title')}
+            onChange={(next) => {
+              const entry = next === null ? undefined : saved.find((item) => item.name === next)
               if (entry) onChange({ ...(entry.filters as TaskFilters) })
             }}
-          >
-            <option value="">{t('savedFilters.title')}</option>
-            {saved.map((entry) => (
-              <option key={entry.name} value={entry.name}>
-                {entry.name}
-              </option>
-            ))}
-          </select>
+          />
         ) : null}
 
         {activeCount > 0 ? (
@@ -400,29 +387,25 @@ export function TaskFilterBar({ value, members, projects, onChange }: TaskFilter
 
           <label className="filter-select">
             <span>{t('filters.sortBy')}</span>
-            <select
+            <Listbox<string>
               value={value.sort ?? 'created_at'}
-              onChange={(event) => onChange({ ...value, sort: event.target.value })}
-            >
-              {SORTABLE.map((option) => (
-                <option key={option.id} value={option.id}>
-                  {t(option.label)}
-                </option>
-              ))}
-            </select>
+              options={SORTABLE.map((option) => ({ value: option.id, label: t(option.label) }))}
+              onChange={(next) => onChange({ ...value, sort: next ?? 'created_at' })}
+            />
           </label>
 
           <label className="filter-select">
             <span>{t('filters.direction')}</span>
-            <select
+            <Listbox<string>
               value={value.direction ?? 'desc'}
-              onChange={(event) =>
-                onChange({ ...value, direction: event.target.value === 'asc' ? 'asc' : 'desc' })
+              options={[
+                { value: 'desc', label: t('filters.descending') },
+                { value: 'asc', label: t('filters.ascending') },
+              ]}
+              onChange={(next) =>
+                onChange({ ...value, direction: next === 'asc' ? 'asc' : 'desc' })
               }
-            >
-              <option value="desc">{t('filters.descending')}</option>
-              <option value="asc">{t('filters.ascending')}</option>
-            </select>
+            />
           </label>
 
           <div className="filters__pins">

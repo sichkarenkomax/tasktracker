@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 
 import { useI18n } from '../../../core/i18n'
 import { Icon } from '../../../core/layout/Icon'
+import { Listbox } from '../../../core/ui/Listbox'
 import { DURATION_UNITS } from '../types'
 import type { DurationUnit } from '../types'
 
@@ -97,17 +98,17 @@ export function PlanningFields({
 
       <label className="field">
         <span>{t('tasks.durationUnit')}</span>
-        <select
+        <Listbox<string>
           value={draftUnit}
+          options={DURATION_UNITS.map((option) => ({
+            value: option,
+            label: t(`unit.${option}` as TranslationKey),
+          }))}
           disabled={disabled || pending}
-          onChange={(event) => setDraftUnit(event.target.value as DurationUnit)}
-        >
-          {DURATION_UNITS.map((option) => (
-            <option key={option} value={option}>
-              {t(`unit.${option}` as TranslationKey)}
-            </option>
-          ))}
-        </select>
+          onChange={(next) => {
+            if (next !== null) setDraftUnit(next as DurationUnit)
+          }}
+        />
       </label>
 
       <div className="field">

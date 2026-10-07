@@ -5,6 +5,7 @@ import { useAsync, useMutation } from '../hooks/useAsync'
 import { useI18n } from '../i18n'
 import type { TranslationKey } from '../i18n'
 import { Icon } from '../layout/Icon'
+import { Listbox } from '../ui/Listbox'
 import { organizationsApi } from './api'
 import type { Member, OrganizationRole } from './api'
 import { useOrganizationId } from './OrganizationContext'
@@ -163,22 +164,22 @@ function MemberRow({
       {mayManage ? (
         <label className="member__role">
           <span className="visually-hidden">{t('members.role')}</span>
-          <select
+          <Listbox<OrganizationRole>
             value={member.role}
+            options={roleOptions.map((role) => ({
+              value: role,
+              label: t(roleLabel(role)),
+              hint: t(ROLE_HINTS[role]),
+            }))}
             disabled={changeRole.pending}
-            onChange={async (event) => {
+            onChange={async (next) => {
+              if (next === null) return
               setError(null)
-              const done = await changeRole.run(event.target.value as OrganizationRole)
+              const done = await changeRole.run(next)
               if (done !== null) onChanged()
               else setError(changeRole.error)
             }}
-          >
-            {roleOptions.map((role) => (
-              <option key={role} value={role} title={t(ROLE_HINTS[role])}>
-                {t(roleLabel(role))}
-              </option>
-            ))}
-          </select>
+          />
         </label>
       ) : (
         <span className="badge" title={t(ROLE_HINTS[member.role])}>
@@ -270,16 +271,17 @@ function AddMember({
         </label>
         <label className="field">
           <span>{t('members.role')}</span>
-          <select
+          <Listbox<OrganizationRole>
             value={role}
-            onChange={(event) => setRole(event.target.value as OrganizationRole)}
-          >
-            {(['admin', 'member', 'viewer'] as OrganizationRole[]).map((option) => (
-              <option key={option} value={option} title={t(ROLE_HINTS[option])}>
-                {t(roleLabel(option))}
-              </option>
-            ))}
-          </select>
+            options={(['admin', 'member', 'viewer'] as OrganizationRole[]).map((option) => ({
+              value: option,
+              label: t(roleLabel(option)),
+              hint: t(ROLE_HINTS[option]),
+            }))}
+            onChange={(next) => {
+              if (next !== null) setRole(next)
+            }}
+          />
         </label>
       </div>
 

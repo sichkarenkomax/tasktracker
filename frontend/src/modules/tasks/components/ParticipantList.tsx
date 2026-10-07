@@ -4,6 +4,7 @@ import { useMutation } from '../../../core/hooks/useAsync'
 import { useI18n } from '../../../core/i18n'
 import { Icon } from '../../../core/layout/Icon'
 import type { Member } from '../../../core/organizations/api'
+import { Listbox } from '../../../core/ui/Listbox'
 import type { ParticipantRole, TaskParticipant } from '../types'
 
 /**
@@ -32,6 +33,9 @@ export function ParticipantList({
 }) {
   const { t } = useI18n()
   const [picking, setPicking] = useState<ParticipantRole | null>(null)
+  // Controlled rather than read off the form element: the picker is a button
+  // now, and the choice has to survive re-renders of the row it sits in.
+  const [who, setWho] = useState('')
 
   const adding = useMutation<{ userId: string; role: ParticipantRole }, void>(async (input) => {
     await onAdd(input.userId, input.role)
@@ -75,7 +79,11 @@ export function ParticipantList({
               type="button"
               className="icon-button"
               aria-label={`${t('members.add')}: ${title}`}
-              onClick={() => setPicking((current) => (current === role ? null : role))}
+              onClick={() => {
+                setPicking((current) => (current === role ? null : role))
+                // Every opening starts from "no choice yet".
+                setWho('')
+              }}
             >
               <Icon name="plus" size={14} />
             </button>
@@ -110,30 +118,43 @@ export function ParticipantList({
             className="participants__add"
             onSubmit={async (event) => {
               event.preventDefault()
-              const field = event.currentTarget.elements.namedItem('who')
-              const userId = field instanceof HTMLSelectElement ? field.value : ''
-              if (!userId) return
-              const done = await adding.run({ userId, role })
-              if (done !== null) setPicking(null)
+              if (!who) return
+              const done = await adding.run({ userId: who, role })
+              if (done !== null) {
+                setWho('')
+                setPicking(null)
+              }
             }}
           >
             <label>
               <span className="visually-hidden">{title}</span>
-              <select name="who" defaultValue="" required>
-                <option value="" disabled>
-                  {t('tasks.anyone')}
-                </option>
-                {candidates.map((member) => (
-                  <option key={member.user_id} value={member.user_id}>
-                    {member.first_name || member.username}
-                  </option>
-                ))}
-              </select>
+              <Listbox<string>
+                value={who === '' ? null : who}
+                options={candidates.map((member) => ({
+                  value: member.user_id,
+                  label: member.first_name || member.username,
+                }))}
+                placeholder={t('tasks.anyone')}
+                onChange={(next) => setWho(next ?? '')}
+              />
             </label>
-            <button type="submit" className="button button--primary" disabled={adding.pending}>
+            {/* The browser's `required` went with the native select, so the
+                submit button itself holds the line until a person is chosen. */}
+            <button
+              type="submit"
+              className="button button--primary"
+              disabled={adding.pending || !who}
+            >
               {t('app.create')}
             </button>
-            <button type="button" className="link" onClick={() => setPicking(null)}>
+            <button
+              type="button"
+              className="link"
+              onClick={() => {
+                setWho('')
+                setPicking(null)
+              }}
+            >
               {t('app.cancel')}
             </button>
             {adding.error ? (

@@ -197,26 +197,17 @@ function TaskDetail() {
 
   return (
     <section className="narrow-wide">
-      <nav className="breadcrumb">
-        <Link to="/projects">{t('projects.title')}</Link>
-        <span aria-hidden="true"> / </span>
-        {/* A task with no project has no project to go back to; linking
-            `/projects//tasks` produced a route that matched nothing. */}
-        {current.project_id ? (
-          <>
-            <Link to={`/projects/${current.project_id}/tasks`}>{t('projects.tasks')}</Link>
-            <span aria-hidden="true"> / </span>
-          </>
-        ) : (
-          <>
-            <Link to="/tasks">{t('tasks.allTasks')}</Link>
-            <span aria-hidden="true"> / </span>
-          </>
-        )}
-        <span>{t('tasks.title')}</span>
-      </nav>
-
       <header className="page-header">
+        <button
+          type="button"
+          className="page-header__back"
+          onClick={() =>
+            navigate(current.project_id ? `/projects/${current.project_id}/tasks` : '/tasks')
+          }
+        >
+          <Icon name="chevron" size={14} className="page-header__back-icon" />
+          <span>{t('app.back')}</span>
+        </button>
         <h1>
           <TaskTitleEditor
             value={current.title}

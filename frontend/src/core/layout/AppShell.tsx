@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, NavLink, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 
 import { useAuth } from '../auth/AuthContext'
@@ -10,6 +10,7 @@ import { organizationsApi } from '../organizations/api'
 import type { Member } from '../organizations/api'
 import { projectsApi } from '../projects/api'
 import type { Project } from '../projects/api'
+import { Listbox } from '../ui/Listbox'
 import { Icon } from './Icon'
 import type { IconName } from './Icon'
 
@@ -39,9 +40,24 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const { t } = useI18n()
   const [navOpen, setNavOpen] = useState(false)
   const location = useLocation()
+  const burgerRef = useRef<HTMLButtonElement>(null)
 
   // Navigating away from a drawer that is now off-screen is a dead end.
   useEffect(() => setNavOpen(false), [location.pathname])
+
+  // Escape closes the drawer and returns focus to the burger, so a keyboard user
+  // who opened it can fold it up again without reaching for the mouse.
+  useEffect(() => {
+    if (!navOpen) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setNavOpen(false)
+        burgerRef.current?.focus()
+      }
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [navOpen])
 
   const signedIn = status === 'authenticated'
 
@@ -53,18 +69,22 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     >
       {signedIn ? <Rail /> : null}
       {signedIn ? <Navigator onNavigate={() => setNavOpen(false)} /> : null}
+      {signedIn ? <div className="shell__nav-scrim" onClick={() => setNavOpen(false)} /> : null}
 
       <div className="shell__body">
         <header className="shell__bar">
-          <button
-            type="button"
-            className="shell__burger"
-            aria-label={t('nav.openMenu')}
-            aria-expanded={navOpen}
-            onClick={() => setNavOpen((open) => !open)}
-          >
-            <Icon name="tasks" />
-          </button>
+          {signedIn ? (
+            <button
+              ref={burgerRef}
+              type="button"
+              className="shell__burger"
+              aria-label={t('nav.openMenu')}
+              aria-expanded={navOpen}
+              onClick={() => setNavOpen((open) => !open)}
+            >
+              <Icon name="tasks" />
+            </button>
+          ) : null}
 
           <Link to="/" className="shell__brand">
             {t('app.name')}
@@ -433,21 +453,20 @@ function OrganizationSwitcher() {
   return (
     <label className="shell__switcher">
       <span className="visually-hidden">{t('nav.organization')}</span>
-      <select
+      <Listbox<string>
         value={current.id}
-        onChange={(event) => {
+        options={organizations.map((organization) => ({
+          value: organization.id,
+          label: organization.name,
+        }))}
+        onChange={(next) => {
+          if (!next) return
           // A different tenant means different projects and tasks, so the page
           // being looked at almost certainly does not exist over there.
-          select(event.target.value)
+          select(next)
           navigate('/projects')
         }}
-      >
-        {organizations.map((organization) => (
-          <option key={organization.id} value={organization.id}>
-            {organization.name}
-          </option>
-        ))}
-      </select>
+      />
     </label>
   )
 }
@@ -458,13 +477,13 @@ function LanguageSwitcher() {
     <label className="shell__switcher" title={t('app.language')}>
       <Icon name="language" />
       <span className="visually-hidden">{t('app.language')}</span>
-      <select value={locale} onChange={(event) => setLocale(event.target.value as 'en' | 'ru')}>
-        {LOCALES.map((entry) => (
-          <option key={entry.id} value={entry.id}>
-            {entry.label}
-          </option>
-        ))}
-      </select>
+      <Listbox<string>
+        value={locale}
+        options={LOCALES.map((entry) => ({ value: entry.id, label: entry.label }))}
+        onChange={(next) => {
+          if (next === 'en' || next === 'ru') setLocale(next)
+        }}
+      />
     </label>
   )
 }

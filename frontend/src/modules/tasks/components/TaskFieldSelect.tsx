@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
 
+import { Listbox } from '../../../core/ui/Listbox'
+
 /**
  * A labelled select for one task field.
  *
@@ -65,18 +67,15 @@ export function TaskFieldSelect<T extends string>({
   return (
     <label className="field">
       <span>{label}</span>
-      <select
-        value={draft}
+      <Listbox<T>
+        value={draft === '' ? null : (draft as T)}
+        options={options}
+        placeholder={emptyLabel}
+        clearable={emptyLabel !== undefined}
         disabled={disabled || pending}
-        onChange={(event) => void commit(event.target.value)}
-      >
-        {emptyLabel === undefined ? null : <option value="">{emptyLabel}</option>}
-        {options.map((option) => (
-          <option key={option.value} value={option.value}>
-            {option.label}
-          </option>
-        ))}
-      </select>
+        invalid={error !== null}
+        onChange={(next) => void commit(next ?? '')}
+      />
       {error ? (
         <span className="field__error" role="alert">
           {error}

@@ -5,6 +5,7 @@ import { useI18n } from '../i18n'
 import type { TranslationKey } from '../i18n'
 import { Icon } from '../layout/Icon'
 import { useCapabilities } from '../permissions/capabilities'
+import { Listbox } from '../ui/Listbox'
 import { organizationsApi } from './api'
 import type { Member, OrgPosition, OrgStructure, Placement } from './api'
 import { departmentSubtree, displayName, flattenDepartments } from './chartLayout'
@@ -639,19 +640,18 @@ function PositionRow({
           void save({ rank: next })
         }}
       />
-      <select
+      <Listbox<string>
         className="org__position-dept"
         aria-label={t('org.positionDepartment')}
-        value={position.department_id ?? ''}
-        onChange={(event) => void save({ department_id: event.target.value || null })}
-      >
-        <option value="">{t('org.noDepartment')}</option>
-        {structure.departments.map((department) => (
-          <option key={department.id} value={department.id}>
-            {department.name}
-          </option>
-        ))}
-      </select>
+        value={position.department_id ?? null}
+        options={structure.departments.map((department) => ({
+          value: department.id,
+          label: department.name,
+        }))}
+        placeholder={t('org.noDepartment')}
+        clearable
+        onChange={(next) => void save({ department_id: next ?? null })}
+      />
       <button
         type="button"
         className="icon-button"
@@ -808,46 +808,41 @@ function DepartmentInspector({
 
         <label className="field">
           <span>{t('org.parent')}</span>
-          <select
-            value={department.parent_id ?? ''}
-            onChange={(event) =>
+          <Listbox<string>
+            value={department.parent_id ?? null}
+            options={structure.departments
+              .filter((item) => !forbidden.has(item.id))
+              .map((item) => ({ value: item.id, label: item.name }))}
+            placeholder={t('org.topLevel')}
+            clearable
+            onChange={(next) =>
               void run(
                 organizationsApi.updateDepartment(organizationId, departmentId, {
-                  parent_id: event.target.value || null,
+                  parent_id: next ?? null,
                 }),
               )
             }
-          >
-            <option value="">{t('org.topLevel')}</option>
-            {structure.departments
-              .filter((item) => !forbidden.has(item.id))
-              .map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.name}
-                </option>
-              ))}
-          </select>
+          />
         </label>
 
         <label className="field">
           <span>{t('org.head')}</span>
-          <select
-            value={department.head_id ?? ''}
-            onChange={(event) =>
+          <Listbox<string>
+            value={department.head_id ?? null}
+            options={members.map((item) => ({
+              value: item.user_id,
+              label: displayName(item),
+            }))}
+            placeholder={t('org.noManager')}
+            clearable
+            onChange={(next) =>
               void run(
                 organizationsApi.updateDepartment(organizationId, departmentId, {
-                  head_id: event.target.value || null,
+                  head_id: next ?? null,
                 }),
               )
             }
-          >
-            <option value="">{t('org.noManager')}</option>
-            {members.map((item) => (
-              <option key={item.user_id} value={item.user_id}>
-                {displayName(item)}
-              </option>
-            ))}
-          </select>
+          />
         </label>
       </div>
 
@@ -982,54 +977,47 @@ function PersonInspector({
       <div className="fields">
         <label className="field">
           <span>{t('org.departments')}</span>
-          <select
-            value={placement.department_id ?? ''}
+          <Listbox<string>
+            value={placement.department_id ?? null}
+            options={structure.departments.map((department) => ({
+              value: department.id,
+              label: department.name,
+            }))}
+            placeholder={t('org.noDepartment')}
+            clearable
             disabled={!canEdit || place.pending}
-            onChange={(event) =>
-              void run(place.runOrThrow({ department_id: event.target.value || null }))
-            }
-          >
-            <option value="">{t('org.noDepartment')}</option>
-            {structure.departments.map((department) => (
-              <option key={department.id} value={department.id}>
-                {department.name}
-              </option>
-            ))}
-          </select>
+            onChange={(next) => void run(place.runOrThrow({ department_id: next ?? null }))}
+          />
         </label>
 
         <label className="field">
           <span>{t('org.positions')}</span>
-          <select
-            value={placement.position_id ?? ''}
+          <Listbox<string>
+            value={placement.position_id ?? null}
+            options={structure.positions.map((position) => ({
+              value: position.id,
+              label: position.title,
+            }))}
+            placeholder={t('org.noPosition')}
+            clearable
             disabled={!canEdit || place.pending}
-            onChange={(event) =>
-              void run(place.runOrThrow({ position_id: event.target.value || null }))
-            }
-          >
-            <option value="">{t('org.noPosition')}</option>
-            {structure.positions.map((position) => (
-              <option key={position.id} value={position.id}>
-                {position.title}
-              </option>
-            ))}
-          </select>
+            onChange={(next) => void run(place.runOrThrow({ position_id: next ?? null }))}
+          />
         </label>
 
         <label className="field">
           <span>{t('org.manager')}</span>
-          <select
-            value={placement.manager_id ?? ''}
+          <Listbox<string>
+            value={placement.manager_id ?? null}
+            options={candidates.map((item) => ({
+              value: item.user_id,
+              label: displayName(item),
+            }))}
+            placeholder={t('org.noManager')}
+            clearable
             disabled={!canEdit || place.pending}
-            onChange={(event) => void run(place.runOrThrow({ manager_id: event.target.value || null }))}
-          >
-            <option value="">{t('org.noManager')}</option>
-            {candidates.map((item) => (
-              <option key={item.user_id} value={item.user_id}>
-                {displayName(item)}
-              </option>
-            ))}
-          </select>
+            onChange={(next) => void run(place.runOrThrow({ manager_id: next ?? null }))}
+          />
         </label>
       </div>
 
@@ -1059,20 +1047,18 @@ function PersonInspector({
         )}
 
         {canEdit && deputyCandidates.length > 0 ? (
-          <select
-            value=""
+          <Listbox<string>
+            value={null}
+            options={deputyCandidates.map((item) => ({
+              value: item.user_id,
+              label: displayName(item),
+            }))}
+            placeholder={t('org.addDeputy')}
             aria-label={t('org.addDeputy')}
-            onChange={(event) => {
-              if (event.target.value) void run(addDeputy.runOrThrow(event.target.value))
+            onChange={(next) => {
+              if (next) void run(addDeputy.runOrThrow(next))
             }}
-          >
-            <option value="">{t('org.addDeputy')}</option>
-            {deputyCandidates.map((item) => (
-              <option key={item.user_id} value={item.user_id}>
-                {displayName(item)}
-              </option>
-            ))}
-          </select>
+          />
         ) : null}
       </div>
 

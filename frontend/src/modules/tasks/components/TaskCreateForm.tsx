@@ -5,6 +5,7 @@ import { useMutation } from '../../../core/hooks/useAsync'
 import { Icon } from '../../../core/layout/Icon'
 import type { Member } from '../../../core/organizations/api'
 import type { Project } from '../../../core/projects/api'
+import { Listbox } from '../../../core/ui/Listbox'
 import { useTaskVocabulary } from './Badges'
 import type { TaskCreate, TaskPriority } from '../types'
 
@@ -75,6 +76,13 @@ export function TaskCreateForm({
       return
     }
     setLocalError(null)
+    // The browser's `required` on the old select is gone with it, so the rule
+    // it enforced - a task always has somebody responsible - is checked here,
+    // next to where the message appears.
+    if (assigneeId === '') {
+      setLocalError(t('tasks.noResponsible'))
+      return
+    }
     const created = await mutation.run({
       title: trimmed,
       // An empty textarea means "no description", which is a value the API
@@ -130,17 +138,13 @@ export function TaskCreateForm({
 
         <label>
           <span>{t('tasks.priority')}</span>
-          <select
-            value={priority}
-            onChange={(event) => setPriority(event.target.value as TaskPriority | '')}
-          >
-            <option value="">{t('priority.medium')}</option>
-            {priorityOptions.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
+          <Listbox<string>
+            value={priority === '' ? null : priority}
+            options={priorityOptions}
+            placeholder={t('priority.medium')}
+            clearable
+            onChange={(next) => setPriority((next ?? '') as TaskPriority | '')}
+          />
         </label>
 
         <label>
@@ -154,39 +158,30 @@ export function TaskCreateForm({
 
         <label>
           <span>{t('tasks.assignee')}</span>
-          <select
-            value={assigneeId}
-            required
-            onChange={(event) => setAssigneeId(event.target.value)}
-          >
-            {/* No empty option on purpose. A task always has somebody responsible
-                for it, and the server answers 422 to a task without one; offering
-                a blank choice here would only move that error further away. */}
-            <option value="" disabled>
-              {t('tasks.noResponsible')}
-            </option>
-            {members.map((member) => (
-              <option key={member.user_id} value={member.user_id}>
-                {member.first_name || member.username}
-              </option>
-            ))}
-          </select>
+          {/* No clear row on purpose. A task always has somebody responsible
+              for it, and the server answers 422 to a task without one; offering
+              a blank choice here would only move that error further away. */}
+          <Listbox<string>
+            value={assigneeId === '' ? null : assigneeId}
+            options={members.map((member) => ({
+              value: member.user_id,
+              label: member.first_name || member.username,
+            }))}
+            placeholder={t('tasks.noResponsible')}
+            onChange={(next) => setAssigneeId(next ?? '')}
+          />
         </label>
 
         {projectId ? null : (
           <label>
             <span>{t('columns.column.project')}</span>
-            <select
-              value={targetProject}
-              onChange={(event) => setTargetProject(event.target.value)}
-            >
-              <option value="">{t('tasks.noProject')}</option>
-              {projects.map((project) => (
-                <option key={project.id} value={project.id}>
-                  {project.name}
-                </option>
-              ))}
-            </select>
+            <Listbox<string>
+              value={targetProject === '' ? null : targetProject}
+              options={projects.map((project) => ({ value: project.id, label: project.name }))}
+              placeholder={t('tasks.noProject')}
+              clearable
+              onChange={(next) => setTargetProject(next ?? '')}
+            />
           </label>
         )}
       </div>

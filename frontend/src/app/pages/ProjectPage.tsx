@@ -1,8 +1,9 @@
-import { Link, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 
 import { formatDateTime } from '../../core/format'
 import { useAsync } from '../../core/hooks/useAsync'
 import { useI18n } from '../../core/i18n'
+import { Icon } from '../../core/layout/Icon'
 import { organizationsApi } from '../../core/organizations/api'
 import type { Member } from '../../core/organizations/api'
 import { useOrganization } from '../../core/organizations/OrganizationContext'
@@ -29,6 +30,7 @@ export function ProjectPage() {
 
 function Project() {
   const { t } = useI18n()
+  const navigate = useNavigate()
   const { projectId } = useParams<{ projectId: string }>()
   const { current: organization } = useOrganization()
   const organizationId = organization?.id ?? null
@@ -79,13 +81,15 @@ function Project() {
 
   return (
     <section>
-      <nav className="breadcrumb">
-        <Link to="/projects">{t('projects.title')}</Link>
-        <span aria-hidden="true"> / </span>
-        <span>{current.name}</span>
-      </nav>
-
       <header className="page-header">
+        <button
+          type="button"
+          className="page-header__back"
+          onClick={() => navigate('/projects')}
+        >
+          <Icon name="chevron" size={14} className="page-header__back-icon" />
+          <span>{t('app.back')}</span>
+        </button>
         <h1>{current.name}</h1>
         <span className={`badge badge--project-${current.status}`}>{current.status}</span>
       </header>
