@@ -13,7 +13,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.errors import NotFoundError
+from app.core.errors import NotFoundError, ValidationError
 from app.core.settings.models import OrganizationSetting, UserSetting
 
 #: Settings a module may declare. `default` is the value used when an
@@ -21,7 +21,15 @@ from app.core.settings.models import OrganizationSetting, UserSetting
 SETTING_DEFINITIONS: dict[str, dict[str, Any]] = {
     "locale": {"type": "string", "default": "en"},
     "timezone": {"type": "string", "default": "UTC"},
-    "date_format": {"type": "string", "default": "YYYY-MM-DD"},
+    # The portal's date format. It declares its values because the browser
+    # renders it directly: a stored "next tuesday" would have to be either
+    # silently ignored or printed, and neither is worth the ambiguity. Keys that
+    # no frontend renders stay free-form here - a module reads its own.
+    "date_format": {
+        "type": "string",
+        "default": "YYYY-MM-DD",
+        "values": ["YYYY-MM-DD", "DD.MM.YYYY", "MM/DD/YYYY", "DD.MM.YY", "locale"],
+    },
     "week_starts_on": {"type": "integer", "default": 1},
     "task_auto_archive_days": {"type": "integer", "default": 0},
     # Files (stage 2.2). Zero means "no limit", which is the only honest default
@@ -47,6 +55,15 @@ SETTING_DEFINITIONS: dict[str, dict[str, Any]] = {
 PERSONAL_SETTING_DEFINITIONS: dict[str, dict[str, Any]] = {
     "locale": {"type": "string", "default": "ru", "values": ["en", "ru"]},
     "theme": {"type": "string", "default": "gold", "values": ["gold", "blue"]},
+    # The date format is the first key that is *significant*: it changes what
+    # people read on every screen, and two people in the same portal can want
+    # different ones. So it is written here rather than in the browser, and its
+    # personal value outranks the portal's.
+    "date_format": {
+        "type": "string",
+        "default": "YYYY-MM-DD",
+        "values": ["YYYY-MM-DD", "DD.MM.YYYY", "MM/DD/YYYY", "DD.MM.YY", "locale"],
+    },
 }
 
 
@@ -79,6 +96,14 @@ class SettingsService:
                 f"Unknown setting(s): {', '.join(unknown)}",
                 details={"available": sorted(SETTING_DEFINITIONS)},
             )
+
+        for key, value in values.items():
+            accepted = SETTING_DEFINITIONS[key].get("values")
+            if accepted is not None and value not in accepted:
+                raise ValidationError(
+                    f"Setting {key} does not accept {value!r}",
+                    details={"allowed": accepted},
+                )
 
         stmt = select(OrganizationSetting).where(
             OrganizationSetting.organization_id == organization_id
@@ -128,6 +153,20 @@ class PersonalSettingsService:
         values.update({row.key: row.value for row in rows})
         return values
 
+    async def stored(self, organization_id: UUID, user_id: UUID) -> dict[str, Any]:
+        """Only what this person actually chose, with no defaults merged in.
+
+        The counterpart to `read`: an effective value cannot say whether the person
+        picked it or inherited the default, and a client deciding "do they have an
+        opinion of their own?" needs exactly that difference.
+        """
+        stmt = select(UserSetting).where(
+            UserSetting.organization_id == organization_id,
+            UserSetting.user_id == user_id,
+        )
+        rows = (await self._session.scalars(stmt)).all()
+        return {row.key: row.value for row in rows}
+
     async def write(
         self, organization_id: UUID, user_id: UUID, values: dict[str, Any]
     ) -> dict[str, Any]:
@@ -138,6 +177,20 @@ class PersonalSettingsService:
                 details={"available": sorted(PERSONAL_SETTING_DEFINITIONS)},
             )
 
+        # A key may declare the values it accepts, and then a value outside that
+        # list is refused here rather than stored and discovered at the first
+        # render. `null` is exempt: it is how a person says "no opinion of my
+        # own", which is not a value anybody has to accept.
+        for key, value in values.items():
+            accepted = PERSONAL_SETTING_DEFINITIONS[key].get("values")
+            if value is None:
+                continue
+            if accepted is not None and value not in accepted:
+                raise ValidationError(
+                    f"Setting {key} does not accept {value!r}",
+                    details={"allowed": accepted},
+                )
+
         stmt = select(UserSetting).where(
             UserSetting.organization_id == organization_id,
             UserSetting.user_id == user_id,
@@ -146,7 +199,12 @@ class PersonalSettingsService:
 
         for key, value in values.items():
             row = existing.get(key)
-            if row is None:
+            if value is None and row is not None:
+                # `null` is "I have no opinion": the row goes, and the portal's
+                # value (or the registry default) shows through again. Without a
+                # way to say that, choosing a setting once would be permanent.
+                await self._session.delete(row)
+            elif row is None:
                 self._session.add(
                     UserSetting(
                         organization_id=organization_id, user_id=user_id, key=key, value=value

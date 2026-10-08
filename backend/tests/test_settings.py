@@ -107,6 +107,24 @@ class TestWrite:
         assert "nonsense" in response.json()["error"]["message"]
         assert "locale" in response.json()["error"]["details"]["available"]
 
+    async def test_a_value_the_key_does_not_accept_is_refused(
+        self, client: AsyncClient, owner: dict[str, Any]
+    ) -> None:
+        """The portal's date format is rendered by the browser, so a value it
+        cannot draw is refused here instead of being stored and quietly ignored.
+
+        Keys no frontend renders stay free-form - a module validates its own.
+        """
+        response = await write_settings(
+            client, owner["token"], owner["organization"]["id"], {"date_format": "next tuesday"}
+        )
+
+        assert response.status_code == 422
+        assert "next tuesday" in response.json()["error"]["message"]
+
+        reread = (await read_settings(client, owner["token"], owner["organization"]["id"])).json()
+        assert reread["values"]["date_format"] == SETTING_DEFINITIONS["date_format"]["default"]
+
     async def test_a_plain_member_may_not_write(
         self, client: AsyncClient, owner: dict[str, Any], outsider: dict[str, Any]
     ) -> None:
@@ -229,3 +247,44 @@ class TestPersonalSettings:
         assert response.status_code == 404
         assert "font" in response.json()["error"]["message"]
         assert "theme" in response.json()["error"]["details"]["available"]
+
+    async def test_stored_says_what_was_chosen_and_does_not_merge_defaults(
+        self, client: AsyncClient, owner: dict[str, Any]
+    ) -> None:
+        """The difference between "they picked this" and "nobody picked anything".
+
+        `values` carries every key with its default, so a client that read it as
+        an opinion would pin everybody to the default and leave the portal's own
+        date format unreachable. `stored` stays empty until something is written.
+        """
+        organization_id = owner["organization"]["id"]
+
+        before = (await read_personal(client, owner["token"], organization_id)).json()
+        assert before["stored"] == {}
+        assert (
+            before["values"]["date_format"]
+            == PERSONAL_SETTING_DEFINITIONS["date_format"]["default"]
+        )
+
+        await write_personal(client, owner["token"], organization_id, {"date_format": "DD.MM.YY"})
+
+        after = (await read_personal(client, owner["token"], organization_id)).json()
+        assert after["stored"] == {"date_format": "DD.MM.YY"}
+        assert after["values"]["date_format"] == "DD.MM.YY"
+        assert "theme" not in after["stored"]
+
+    async def test_a_personal_value_the_key_does_not_accept_is_refused(
+        self, client: AsyncClient, owner: dict[str, Any]
+    ) -> None:
+        response = await write_personal(
+            client, owner["token"], owner["organization"]["id"], {"date_format": "next tuesday"}
+        )
+
+        assert response.status_code == 422
+        assert "next tuesday" in response.json()["error"]["message"]
+
+        reread = (await read_personal(client, owner["token"], owner["organization"]["id"])).json()
+        assert (
+            reread["values"]["date_format"]
+            == PERSONAL_SETTING_DEFINITIONS["date_format"]["default"]
+        )

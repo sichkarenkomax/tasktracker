@@ -364,6 +364,15 @@ export const ru: Record<TranslationKey, string> = {
     'Наибольший размер одного файла и сколько всего может хранить портал. Ноль — без ограничения. Лимиты отделов и людей задаются вместе с квотами на файлы.',
   'settings.maxFileSize': 'Максимальный файл, МБ',
   'settings.storageQuota': 'Всего в хранилище, ГБ',
+  'settings.dateFormat': 'Формат даты',
+  'settings.dateFormatPortal': 'Как в портале',
+  'settings.dateFormatHint':
+    'Как записываются даты в этом портале. Каждый может выбрать свой формат в персональных настройках.',
+  'dateFormat.YYYY-MM-DD': '2026-10-08 (ISO)',
+  'dateFormat.DD.MM.YYYY': '08.10.2026',
+  'dateFormat.MM/DD/YYYY': '10/08/2026',
+  'dateFormat.DD.MM.YY': '08.10.26',
+  'dateFormat.locale': 'Как пишет мой язык (8 октября 2026)',
 
   // --- users (portal admin) --------------------------------------------
   'users.title': 'Пользователи',
@@ -393,6 +402,11 @@ export const ru: Record<TranslationKey, string> = {
   'preferences.subtitle': 'Как этот портал выглядит и на каком языке читается.',
   'preferences.account': 'Аккаунт',
   'preferences.accountHint': 'Имя, почта, пароль и сессия — в профиле.',
+  'profile.avatarChoose': 'Выбрать картинку',
+  'profile.avatarHint':
+    'Обрежется и уменьшится прямо в браузере, до загрузки — настраивать ничего не нужно.',
+  'profile.avatarTooBig': 'В этом портале не осталось места для такого файла.',
+  'profile.avatarNoRoom': 'Ваша квота хранилища исчерпана.',
 
   // --- errors -----------------------------------------------------------
   'error.generic': 'Что-то пошло не так.',

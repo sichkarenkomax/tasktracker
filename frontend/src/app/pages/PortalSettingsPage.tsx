@@ -1,9 +1,12 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
-import { formatDateTime } from '../../core/format'
+import { DATE_FORMATS, formatDateTime, getDateFormat } from '../../core/format'
+import type { DateFormat } from '../../core/format'
 import { useAsync, useMutation } from '../../core/hooks/useAsync'
 import { useI18n } from '../../core/i18n'
+import type { TranslationKey } from '../../core/i18n'
+import { Listbox } from '../../core/ui/Listbox'
 import { organizationsApi } from '../../core/organizations/api'
 import { useOrganization } from '../../core/organizations/OrganizationContext'
 import { RequiresOrganization } from '../../core/organizations/RequiresOrganization'
@@ -57,6 +60,7 @@ function Settings() {
   // The two file limits are entered in megabytes and gigabytes and stored in
   // bytes: the settings screen is read by people, the server counts bytes.
   const [fileLimits, setFileLimits] = useState({ maxFileSizeMb: 0, quotaGb: 0 })
+  const [dateFormat, setDateFormat] = useState<DateFormat>(getDateFormat)
   const [fileError, setFileError] = useState<string | null>(null)
 
   if (!organization || organizationId === null) return null
@@ -83,6 +87,12 @@ function Settings() {
     { max_file_size_bytes: number; storage_quota_bytes: number },
     void
   >(async (body) => {
+    await organizationsApi.updateSettings(organizationId, body)
+  })
+
+  // The portal's own date format is the fallback for anybody who has not chosen
+  // one, so it is saved with everything else this screen owns.
+  const saveDateFormatSetting = useMutation<{ date_format: string }, void>(async (body) => {
     await organizationsApi.updateSettings(organizationId, body)
   })
 
@@ -172,6 +182,22 @@ function Settings() {
           }}
         >
           <div className="fields">
+            <label className="field">
+              <span>{t('settings.dateFormat')}</span>
+              <Listbox<DateFormat>
+                value={dateFormat}
+                options={DATE_FORMATS.map((id) => ({
+                  value: id,
+                  label: t(`dateFormat.${id}` as TranslationKey),
+                }))}
+disabled={!mayEdit}
+                onChange={(next) => {
+                  if (next === null) return
+                  setDateFormat(next)
+                  void saveDateFormatSetting.run({ date_format: next })
+                }}
+              />
+            </label>
             <label className="field">
               <span>{t('settings.maxFileSize')}</span>
               <input

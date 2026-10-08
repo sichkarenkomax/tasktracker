@@ -368,6 +368,15 @@ export const en = {
     'The largest file a single upload may have, and how much this portal stores in total. Zero means no limit. Per-department and per-person allowances are set with the file quotas.',
   'settings.maxFileSize': 'Largest file, MB',
   'settings.storageQuota': 'Storage in total, GB',
+  'settings.dateFormat': 'Date format',
+  'settings.dateFormatPortal': 'As the portal writes it',
+  'settings.dateFormatHint':
+    'How dates are written in this portal. Anyone can pick a different one for themselves in their personal settings.',
+  'dateFormat.YYYY-MM-DD': '2026-10-08 (ISO)',
+  'dateFormat.DD.MM.YYYY': '08.10.2026',
+  'dateFormat.MM/DD/YYYY': '10/08/2026',
+  'dateFormat.DD.MM.YY': '08.10.26',
+  'dateFormat.locale': 'As my language writes it (8 October 2026)',
 
   // --- users (portal admin) --------------------------------------------
   'users.title': 'Users',
@@ -397,6 +406,11 @@ export const en = {
   'preferences.subtitle': 'How this portal reads and looks for you.',
   'preferences.account': 'Account',
   'preferences.accountHint': 'Name, email, password and session live in the profile.',
+  'profile.avatarChoose': 'Choose a picture',
+  'profile.avatarHint':
+    'Cropped and shrunk here in the browser before anything is uploaded - there is nothing to adjust.',
+  'profile.avatarTooBig': 'This portal has no room left for that file.',
+  'profile.avatarNoRoom': 'Your storage allowance is full.',
 
   // --- errors -----------------------------------------------------------
   'error.generic': 'Something went wrong.',

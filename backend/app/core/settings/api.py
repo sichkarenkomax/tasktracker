@@ -32,8 +32,18 @@ class SettingsUpdate(BaseModel):
 
 
 class PersonalSettingsRead(BaseModel):
+    """The caller's settings, and - importantly - what they actually chose.
+
+    ``values`` is defaults merged with stored overrides, which is the right thing
+    to read and the wrong thing to *decide* with: a merged default is
+    indistinguishable from a choice, so a client that honours it would pin every
+    person to the default and leave the portal's own setting unreachable. ``stored``
+    holds only the rows that exist, which answers "did they pick one" honestly.
+    """
+
     organization_id: UUID
     values: dict[str, object]
+    stored: dict[str, object]
     available: dict[str, dict[str, object]]
 
 
@@ -102,9 +112,11 @@ async def read_personal_settings(
     organization_id: UUID, user: CurrentUser, session: SessionDep
 ) -> PersonalSettingsRead:
     await _require_member(session, user, organization_id)
+    service = PersonalSettingsService(session)
     return PersonalSettingsRead(
         organization_id=organization_id,
-        values=await PersonalSettingsService(session).read(organization_id, user.id),
+        values=await service.read(organization_id, user.id),
+        stored=await service.stored(organization_id, user.id),
         available=personal_definitions(),
     )
 
@@ -125,5 +137,8 @@ async def update_personal_settings(
     values = await service.write(organization_id, user.id, payload.values)
     await session.commit()
     return PersonalSettingsRead(
-        organization_id=organization_id, values=values, available=personal_definitions()
+        organization_id=organization_id,
+        values=values,
+        stored=await service.stored(organization_id, user.id),
+        available=personal_definitions(),
     )

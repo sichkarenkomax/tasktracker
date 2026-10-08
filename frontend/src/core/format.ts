@@ -11,19 +11,75 @@
  */
 import type { Translate } from './i18n'
 
-const DATE_FORMAT: Intl.DateTimeFormatOptions = { year: 'numeric', month: 'short', day: 'numeric' }
 const DATE_TIME_FORMAT: Intl.DateTimeFormatOptions = { dateStyle: 'medium', timeStyle: 'short' }
-const DEADLINE_FORMAT: Intl.DateTimeFormatOptions = {
-  year: 'numeric',
-  month: 'short',
-  day: 'numeric',
-  hour: '2-digit',
-  minute: '2-digit',
-}
 
 export const EMPTY = '—'
 
 const BARE_DATE = /^\d{4}-\d{2}-\d{2}$/
+
+/**
+ * Date formats, as ids the settings screens offer.
+ *
+ * `locale` is "whatever the reader's language says" and is the only one that is
+ * not a fixed arrangement - which is why the four fixed ones are spelled out here
+ * rather than derived from the locale. A format is stored by id, so a label can
+ * be translated later without invalidating anybody's choice.
+ */
+export const DATE_FORMATS = ['YYYY-MM-DD', 'DD.MM.YYYY', 'MM/DD/YYYY', 'DD.MM.YY', 'locale'] as const
+
+export type DateFormat = (typeof DATE_FORMATS)[number]
+
+const DEFAULT_FORMAT: DateFormat = 'YYYY-MM-DD'
+
+let activeFormat: DateFormat = DEFAULT_FORMAT
+
+/**
+ * The format dates are rendered in, set once the settings are known.
+ *
+ * Module state rather than a React context because every existing call site calls
+ * `formatDate(value)` directly, and threading a format through forty of them is
+ * a change with no upside: the value is a preference, read the same way the
+ * language and the theme are read from one place.
+ */
+export function setDateFormat(format: string | null | undefined): void {
+  activeFormat = (DATE_FORMATS as ReadonlyArray<string>).includes(format ?? '')
+    ? (format as DateFormat)
+    : DEFAULT_FORMAT
+}
+
+export function getDateFormat(): DateFormat {
+  return activeFormat
+}
+
+/** The date as the reader asked for it, from its local calendar parts. */
+function formatByPattern(parts: { y: number; m: number; d: number }): string {
+  const dd = String(parts.d).padStart(2, '0')
+  const mm = String(parts.m + 1).padStart(2, '0')
+  // The last two digits, not a padded four: `padStart` pads but never truncates,
+  // so "2026".padStart(2, "0") is still "2026" and DD.MM.YY would silently print
+  // the full year.
+  const yy = String(parts.y % 100).padStart(2, '0')
+  switch (activeFormat) {
+    case 'DD.MM.YYYY':
+      return `${dd}.${mm}.${parts.y}`
+    case 'MM/DD/YYYY':
+      return `${mm}/${dd}/${parts.y}`
+    case 'DD.MM.YY':
+      return `${dd}.${mm}.${yy}`
+    case 'locale':
+      return `${parts.d} ${new Intl.DateTimeFormat(undefined, { month: 'long' }).format(
+        new Date(parts.y, parts.m, 1),
+      )} ${parts.y}`
+    default:
+      return `${parts.y}-${mm}-${dd}`
+  }
+}
+
+function clockOf(value: string, locale?: string): string {
+  return new Intl.DateTimeFormat(locale, { hour: '2-digit', minute: '2-digit' }).format(
+    new Date(value),
+  )
+}
 
 /**
  * A value that may be either a bare `YYYY-MM-DD` or a full instant.
@@ -43,21 +99,24 @@ function hasTime(value: string): boolean {
 }
 
 /** A date, or a date and time when the value carries one, never shifted. */
-export function formatDate(value: string | null | undefined, locale?: string): string {
+export function formatDate(value: string | null | undefined, _locale?: string): string {
   if (!value) return EMPTY
   const parsed = parseDateOrInstant(value)
   if (Number.isNaN(parsed.getTime())) return EMPTY
-  return parsed.toLocaleDateString(locale, DATE_FORMAT)
+  return formatByPattern({ y: parsed.getFullYear(), m: parsed.getMonth(), d: parsed.getDate() })
 }
 
-/** The deadline as written: "8 окт. 2026, 18:00" for an instant, a plain date otherwise. */
+/** The deadline as written: the date in the reader's format, plus its time. */
 export function formatDeadline(value: string | null | undefined, locale?: string): string {
   if (!value) return EMPTY
   const parsed = parseDateOrInstant(value)
   if (Number.isNaN(parsed.getTime())) return EMPTY
-  return hasTime(value)
-    ? parsed.toLocaleString(locale, DEADLINE_FORMAT)
-    : parsed.toLocaleDateString(locale, DATE_FORMAT)
+  const day = formatByPattern({
+    y: parsed.getFullYear(),
+    m: parsed.getMonth(),
+    d: parsed.getDate(),
+  })
+  return hasTime(value) ? `${day}, ${clockOf(value, locale)}` : day
 }
 
 export function formatDateTime(value: string | null | undefined, locale?: string): string {
