@@ -28,6 +28,17 @@ export function PortalSettingsPage() {
   )
 }
 
+const MEGABYTE = 1024 * 1024
+const GIGABYTE = 1024 * MEGABYTE
+
+function megabytesToBytes(value: number): number {
+  return Number.isFinite(value) ? value * MEGABYTE : 0
+}
+
+function gigabytesToBytes(value: number): number {
+  return Number.isFinite(value) ? value * GIGABYTE : 0
+}
+
 function Settings() {
   const { t } = useI18n()
   const navigate = useNavigate()
@@ -43,6 +54,10 @@ function Settings() {
   const [draft, setDraft] = useState({ name: '', description: '' })
   const [error, setError] = useState<string | null>(null)
   const [confirming, setConfirming] = useState(false)
+  // The two file limits are entered in megabytes and gigabytes and stored in
+  // bytes: the settings screen is read by people, the server counts bytes.
+  const [fileLimits, setFileLimits] = useState({ maxFileSizeMb: 0, quotaGb: 0 })
+  const [fileError, setFileError] = useState<string | null>(null)
 
   if (!organization || organizationId === null) return null
 
@@ -62,6 +77,13 @@ function Settings() {
 
   const remove = useMutation<void, void>(async () => {
     await organizationsApi.delete(organizationId)
+  })
+
+  const saveFiles = useMutation<
+    { max_file_size_bytes: number; storage_quota_bytes: number },
+    void
+  >(async (body) => {
+    await organizationsApi.updateSettings(organizationId, body)
   })
 
   const mayEdit = capabilities.role === 'owner' || capabilities.role === 'admin'
@@ -127,6 +149,66 @@ function Settings() {
           {error ? (
             <p className="notice notice--error" role="alert">
               {error}
+            </p>
+          ) : null}
+        </form>
+      </section>
+
+      <section className="panel">
+        <h2>{t('settings.files')}</h2>
+        <p className="muted">{t('settings.filesHint')}</p>
+        <form
+          onSubmit={async (event) => {
+            event.preventDefault()
+            setFileError(null)
+            const done = await saveFiles.run({
+              // Written in bytes, entered in the units people think in. Zero
+              // means no limit, and it is the default a fresh portal starts at.
+              max_file_size_bytes: Math.round(megabytesToBytes(fileLimits.maxFileSizeMb)),
+              storage_quota_bytes: Math.round(gigabytesToBytes(fileLimits.quotaGb)),
+            })
+            if (done !== null) reload()
+            else setFileError(saveFiles.error)
+          }}
+        >
+          <div className="fields">
+            <label className="field">
+              <span>{t('settings.maxFileSize')}</span>
+              <input
+                type="number"
+                min={0}
+                step={1}
+                value={fileLimits.maxFileSizeMb}
+                disabled={!mayEdit}
+                onChange={(event) =>
+                  setFileLimits((state) => ({ ...state, maxFileSizeMb: Number(event.target.value) }))
+                }
+              />
+            </label>
+            <label className="field">
+              <span>{t('settings.storageQuota')}</span>
+              <input
+                type="number"
+                min={0}
+                step={1}
+                value={fileLimits.quotaGb}
+                disabled={!mayEdit}
+                onChange={(event) =>
+                  setFileLimits((state) => ({ ...state, quotaGb: Number(event.target.value) }))
+                }
+              />
+            </label>
+          </div>
+          {mayEdit ? (
+            <div className="create-form__actions">
+              <button type="submit" className="button button--primary" disabled={saveFiles.pending}>
+                {saveFiles.pending ? t('app.saving') : t('app.save')}
+              </button>
+            </div>
+          ) : null}
+          {fileError ? (
+            <p className="notice notice--error" role="alert">
+              {fileError}
             </p>
           ) : null}
         </form>

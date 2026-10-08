@@ -359,6 +359,11 @@ export const ru: Record<TranslationKey, string> = {
   'settings.dangerZone': 'Опасная зона',
   'settings.deleteOrganization': 'Удалить организацию',
   'settings.deleteOrganizationConfirm': 'Удалить «{name}» и всё её содержимое? Это необратимо.',
+  'settings.files': 'Файлы и хранилище',
+  'settings.filesHint':
+    'Наибольший размер одного файла и сколько всего может хранить портал. Ноль — без ограничения. Лимиты отделов и людей задаются вместе с квотами на файлы.',
+  'settings.maxFileSize': 'Максимальный файл, МБ',
+  'settings.storageQuota': 'Всего в хранилище, ГБ',
 
   // --- users (portal admin) --------------------------------------------
   'users.title': 'Пользователи',

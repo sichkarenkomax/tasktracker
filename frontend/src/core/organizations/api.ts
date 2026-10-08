@@ -85,6 +85,10 @@ export const organizationsApi = {
     return api.get<OrganizationSettings>(`/organizations/${id}/settings`)
   },
 
+  updateSettings(id: string, values: Record<string, unknown>) {
+    return api.put<OrganizationSettings>(`/organizations/${id}/settings`, { values })
+  },
+
   // --- organization structure -------------------------------------------
 
   /** Departments, positions, reporting lines and deputies in one request. */

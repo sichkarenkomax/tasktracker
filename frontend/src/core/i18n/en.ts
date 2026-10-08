@@ -363,6 +363,11 @@ export const en = {
   'settings.dangerZone': 'Danger zone',
   'settings.deleteOrganization': 'Delete organization',
   'settings.deleteOrganizationConfirm': 'Delete {name} and everything in it? This cannot be undone.',
+  'settings.files': 'Files and storage',
+  'settings.filesHint':
+    'The largest file a single upload may have, and how much this portal stores in total. Zero means no limit. Per-department and per-person allowances are set with the file quotas.',
+  'settings.maxFileSize': 'Largest file, MB',
+  'settings.storageQuota': 'Storage in total, GB',
 
   // --- users (portal admin) --------------------------------------------
   'users.title': 'Users',

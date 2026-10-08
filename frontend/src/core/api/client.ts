@@ -107,14 +107,22 @@ function describe(payload: unknown, fallback: string): { code: ApiErrorCode | 'u
   return { code: 'unknown', message: fallback }
 }
 
-async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+async function request<T>(
+  method: string,
+  path: string,
+  body?: unknown,
+  form?: FormData,
+): Promise<T> {
   const response = await fetch(`${API_PREFIX}${path}`, {
     method,
     // Same-origin requests send cookies by default, but being explicit keeps the
     // client working unchanged behind a proxy that fronts the SPA elsewhere.
     credentials: 'include',
-    headers: body === undefined ? {} : { 'Content-Type': 'application/json' },
-    body: body === undefined ? undefined : JSON.stringify(body),
+    // A `FormData` body must NOT carry a content type of our own: the browser
+    // adds one together with the multipart boundary, and a hand-written header
+    // describes a body the server cannot find the end of.
+    headers: form === undefined ? (body === undefined ? {} : { 'Content-Type': 'application/json' }) : {},
+    body: form ?? (body === undefined ? undefined : JSON.stringify(body)),
   })
 
   if (response.status === 204 || response.status === 205) {
@@ -145,4 +153,6 @@ export const api = {
   patch: <T>(path: string, body: unknown) => request<T>('PATCH', path, body),
   put: <T>(path: string, body: unknown) => request<T>('PUT', path, body),
   delete: <T>(path: string) => request<T>('DELETE', path),
+  /** Multipart upload - the one request whose body is not JSON. */
+  upload: <T>(path: string, form: FormData) => request<T>('POST', path, undefined, form),
 }
