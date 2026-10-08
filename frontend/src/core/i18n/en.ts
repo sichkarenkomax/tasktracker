@@ -58,6 +58,8 @@ export const en = {
   'nav.home': 'Home',
   'nav.structure': 'Org structure',
   'nav.profile': 'My profile',
+  'nav.collapse': 'Collapse panel',
+  'nav.expand': 'Expand panel',
 
   // --- auth -------------------------------------------------------------
   'auth.signIn': 'Sign in',

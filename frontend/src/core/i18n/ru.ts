@@ -55,6 +55,8 @@ export const ru: Record<TranslationKey, string> = {
   'nav.home': 'Главная',
   'nav.structure': 'Оргструктура',
   'nav.profile': 'Мой профиль',
+  'nav.collapse': 'Свернуть панель',
+  'nav.expand': 'Развернуть панель',
 
   // --- auth -------------------------------------------------------------
   'auth.signIn': 'Войти',

@@ -399,7 +399,65 @@ ol {
   max-width: 11rem;
 }
 
+/* The compact language control (stage 1.11): two bare initials, quiet beside
+   the account controls. No border, no field - the active one is tinted with
+   the muted text colour and a faint row, so it reads as a switch without
+   shouting like a button. */
+.lang {
+  display: inline-flex;
+  gap: 0.125rem;
+  align-items: center;
+}
+
+.lang__item {
+  min-height: 0;
+  padding: 0.125rem 0.375rem;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: none;
+  color: var(--text-faint);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+}
+
+.lang__item:hover {
+  color: var(--text-muted);
+}
+
+.lang__item--active {
+  background: var(--nav-active);
+  color: var(--text-muted);
+}
+
 .shell__burger {
+  display: none;
+}
+
+/* The burger (narrow windows, the navigator is a drawer) and the fold (wide
+   windows, the navigator is a column) are the same job done by the same button
+   in the same place, so they share one look and only the breakpoint tells them
+   apart. */
+.shell__burger,
+.shell__toggle {
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  border: 0;
+  border-radius: var(--radius);
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.shell__burger:hover,
+.shell__toggle:hover {
+  background: var(--nav-hover);
+  color: var(--text);
+}
+
+.shell__toggle {
   display: none;
 }
 
@@ -459,6 +517,42 @@ ol {
 
 .rail__spacer {
   flex: 1;
+}
+
+/*
+ * Folding the navigator only makes sense where it is a column beside the page,
+ * and that is every window wider than the drawer's breakpoint. The collapsed
+ * grid is the narrow-window grid, minus the drawer: the panel is removed with
+ * `display` rather than a transform, so it is gone from the keyboard and the
+ * accessibility tree (the drawer keeps its own visibility rules for the same
+ * reason - a hidden-but-focused menu would confuse a screen reader).
+ */
+@media (min-width: 60.0625rem) {
+  .shell__toggle {
+    display: grid;
+  }
+
+  .shell--nav-collapsed {
+    grid-template-columns: var(--rail-width) minmax(0, 1fr);
+    grid-template-areas:
+      'rail bar'
+      'rail main';
+  }
+
+  .shell--nav-collapsed .shell__nav {
+    display: none;
+  }
+}
+
+/* The chevron points left while the panel is up (fold it away) and right while
+   it is down (draw it out again). */
+.shell__toggle-icon {
+  transition: transform 0.15s ease;
+  transform: rotate(-90deg);
+}
+
+.shell__toggle-icon--expand {
+  transform: rotate(90deg);
 }
 
 /* ------------------------------------------------------- org structure --- */
@@ -2367,19 +2461,6 @@ textarea {
 
   .shell__burger {
     display: grid;
-    place-items: center;
-    width: 2rem;
-    height: 2rem;
-    border: 0;
-    border-radius: var(--radius);
-    background: none;
-    color: var(--text-muted);
-    cursor: pointer;
-  }
-
-  .shell__burger:hover {
-    background: var(--nav-hover);
-    color: var(--text);
   }
 }
 
@@ -2414,7 +2495,8 @@ textarea {
 @media (prefers-reduced-motion: reduce) {
   .shell__nav,
   .shell__nav-scrim,
-  .nav__group-chevron {
+  .nav__group-chevron,
+  .shell__toggle-icon {
     transition: none;
   }
 

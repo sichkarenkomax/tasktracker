@@ -8,8 +8,6 @@ import { useAsync } from '../hooks/useAsync'
 import { useI18n, LOCALES } from '../i18n'
 import type { TranslationKey } from '../i18n'
 import { useOrganization } from '../organizations/OrganizationContext'
-import { organizationsApi } from '../organizations/api'
-import type { Member } from '../organizations/api'
 import { projectsApi } from '../projects/api'
 import type { Project } from '../projects/api'
 import { Listbox } from '../ui/Listbox'
@@ -44,6 +42,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const { status, user, signOut } = useAuth()
   const { t } = useI18n()
   const [navOpen, setNavOpen] = useState(false)
+  const [navCollapsed, setNavCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem('tasktracker.nav-collapsed') === '1'
+    } catch {
+      return false
+    }
+  })
   const location = useLocation()
   const burgerRef = useRef<HTMLButtonElement>(null)
 
@@ -66,11 +71,26 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   const signedIn = status === 'authenticated'
 
+  // The navigator can be folded away on windows wide enough for it and the page
+  // side by side; below that it is a drawer and the collapsed state does not
+  // apply (its own media query keeps the class from touching the drawer). The
+  // choice survives reloads, like the theme and the language do.
+  const collapse = (collapsed: boolean) => {
+    setNavCollapsed(collapsed)
+    try {
+      localStorage.setItem('tasktracker.nav-collapsed', collapsed ? '1' : '0')
+    } catch {
+      /* storage unavailable: the panel still toggles for this session */
+    }
+  }
+
   return (
     // Without the panels the grid must lose their columns too, or the bar and the
     // page get squeezed beside two empty ones.
     <div
-      className={`shell${signedIn ? '' : ' shell--no-nav'}${navOpen ? ' shell--nav-open' : ''}`}
+      className={`shell${signedIn ? '' : ' shell--no-nav'}${navOpen ? ' shell--nav-open' : ''}${
+        signedIn && navCollapsed ? ' shell--nav-collapsed' : ''
+      }`}
     >
       {signedIn ? <Rail /> : null}
       {signedIn ? <Navigator onNavigate={() => setNavOpen(false)} /> : null}
@@ -78,17 +98,42 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       <div className="shell__body">
         <header className="shell__bar">
+          {/* One button for one job, in the place the burger sits: on a narrow
+              window it opens the navigator's drawer, on a wide one it folds or
+              unfolds the navigator's column. Only one of the two is on screen at
+              a time - which one is decided by the same breakpoint that decides
+              drawer versus column. */}
           {signedIn ? (
-            <button
-              ref={burgerRef}
-              type="button"
-              className="shell__burger"
-              aria-label={t('nav.openMenu')}
-              aria-expanded={navOpen}
-              onClick={() => setNavOpen((open) => !open)}
-            >
-              <Icon name="tasks" />
-            </button>
+            <>
+              <button
+                ref={burgerRef}
+                type="button"
+                className="shell__burger"
+                aria-label={t('nav.openMenu')}
+                aria-expanded={navOpen}
+                onClick={() => setNavOpen((open) => !open)}
+              >
+                <Icon name="tasks" />
+              </button>
+
+              <button
+                type="button"
+                className="shell__toggle"
+                aria-label={navCollapsed ? t('nav.expand') : t('nav.collapse')}
+                aria-expanded={!navCollapsed}
+                onClick={() => collapse(!navCollapsed)}
+              >
+                <Icon
+                  name="chevron"
+                  size={16}
+                  className={
+                    navCollapsed
+                      ? 'shell__toggle-icon shell__toggle-icon--expand'
+                      : 'shell__toggle-icon'
+                  }
+                />
+              </button>
+            </>
           ) : null}
 
           <Link to="/" className="shell__brand">
@@ -137,9 +182,9 @@ function useSections(): Section[] {
       id: 'people',
       // Three routes, one section: the views of an organization are not parts
       // of the product, and each claiming a rail icon would undo the point of
-      // shrinking the rail.
+      // shrinking the rail. The rail lands on the first row of the navigator.
       prefixes: ['/members', '/users', '/structure'],
-      path: '/members',
+      path: '/users',
       icon: 'members',
       label: t('nav.people'),
     },
@@ -402,32 +447,16 @@ function TasksNavigator({ onNavigate }: { onNavigate: () => void }) {
 }
 
 /**
- * The people section (stage 1.9): one panel for the three routes the rail
- * stopped separating.
+ * The people section: two plain rows, the same for every visitor.
  *
- * "Пользователи" and "Оргструктура" are submenus rather than rail entries:
- * they are views of the same organization, and a header that expands is a
- * different promise from a rail icon that navigates - so the routes stay
- * routes, gathered under headings that say what kind of view they open.
- *
- * The people themselves are still listed as read-only rows: there is no
- * per-member page to link to, and four rows pointing at one URL with four
- * "active" marks would be a lie. The panel indexes the section; it is not a
- * second copy of the table beside it.
+ * What a row does once opened is the page's business and the server's: the
+ * portal user list is a normal page now, and who may grant administrator
+ * rights there is checked at the API, not hidden by which menu appeared.
+ * Nothing in this panel collapses - the section is two destinations, and a
+ * heading that merely expands to one of them would add a click for nothing.
  */
 function PeopleNavigator({ onNavigate }: { onNavigate: () => void }) {
   const { t } = useI18n()
-  const { user } = useAuth()
-  const { pathname } = useLocation()
-  const { current: organization } = useOrganization()
-  const organizationId = organization?.id ?? null
-  const members = useAsync(
-    () =>
-      organizationId
-        ? organizationsApi.members(organizationId)
-        : Promise.resolve<Member[]>([]),
-    [organizationId],
-  )
 
   return (
     <nav className="shell__nav nav">
@@ -435,44 +464,11 @@ function PeopleNavigator({ onNavigate }: { onNavigate: () => void }) {
 
       <ul className="nav__list">
         <li>
-          <NavRow to="/members" icon="members" label={t('members.allMembers')} end onNavigate={onNavigate} />
+          <NavRow to="/users" icon="users" label={t('nav.users')} end onNavigate={onNavigate} />
         </li>
-
-        {(members.data ?? []).map((member) => (
-          <li key={member.user_id}>
-            <div className="nav__item nav__item--static">
-              <Icon name="user" size={15} />
-              <span className="nav__label">{member.first_name || member.username}</span>
-            </div>
-          </li>
-        ))}
-
-        {/* The portal user list is only meaningful to somebody who can grant
-            administrator rights, so the submenu appears for them and nobody
-            else. */}
-        {user?.is_superuser ? (
-          <NavGroup
-            titleKey="nav.users"
-            icon="users"
-            active={pathname.startsWith('/users')}
-            content={
-              <li>
-                <NavRow to="/users" icon="users" label={t('nav.users')} end onNavigate={onNavigate} />
-              </li>
-            }
-          />
-        ) : null}
-
-        <NavGroup
-          titleKey="nav.structure"
-          icon="members"
-          active={pathname.startsWith('/structure')}
-          content={
-            <li>
-              <NavRow to="/structure" icon="members" label={t('org.structure')} end onNavigate={onNavigate} />
-            </li>
-          }
-        />
+        <li>
+          <NavRow to="/structure" icon="members" label={t('org.structure')} end onNavigate={onNavigate} />
+        </li>
 
         <NavigatorGroups section="people" onNavigate={onNavigate} />
       </ul>
@@ -488,7 +484,6 @@ function SettingsNavigator({
   onNavigate: () => void
 }) {
   const { t } = useI18n()
-  const { user } = useAuth()
 
   return (
     <nav className="shell__nav nav">
@@ -498,13 +493,6 @@ function SettingsNavigator({
         <li>
           <NavRow to="/settings" icon="settings" label={t('nav.settings')} end onNavigate={onNavigate} />
         </li>
-        {user?.is_superuser ? (
-          <li>
-            {/* `end` keeps this unlit on /users/me, which is the profile and
-                belongs to the row below. */}
-            <NavRow to="/users" icon="users" label={t('nav.users')} end onNavigate={onNavigate} />
-          </li>
-        ) : null}
         <li>
           <NavRow to="/users/me" icon="user" label={t('nav.profile')} onNavigate={onNavigate} />
         </li>
@@ -548,17 +536,20 @@ function OrganizationSwitcher() {
 function LanguageSwitcher() {
   const { t, locale, setLocale } = useI18n()
   return (
-    <label className="shell__switcher" title={t('app.language')}>
-      <Icon name="language" />
-      <span className="visually-hidden">{t('app.language')}</span>
-      <Listbox<string>
-        value={locale}
-        options={LOCALES.map((entry) => ({ value: entry.id, label: entry.label }))}
-        onChange={(next) => {
-          if (next === 'en' || next === 'ru') setLocale(next)
-        }}
-      />
-    </label>
+    <div className="lang" role="group" aria-label={t('app.language')}>
+      {LOCALES.map((entry) => (
+        <button
+          key={entry.id}
+          type="button"
+          className={locale === entry.id ? 'lang__item lang__item--active' : 'lang__item'}
+          aria-pressed={locale === entry.id}
+          title={entry.label}
+          onClick={() => setLocale(entry.id)}
+        >
+          {entry.id.toUpperCase()}
+        </button>
+      ))}
+    </div>
   )
 }
 
