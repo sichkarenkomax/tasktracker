@@ -42,10 +42,12 @@ export const ru: Record<TranslationKey, string> = {
 
   // --- navigation -------------------------------------------------------
   'nav.projects': 'Проекты',
+  'nav.tasks': 'Задачи',
   'nav.allTasks': 'Все задачи',
   'nav.organization': 'Организация',
   'nav.settings': 'Настройки портала',
   'nav.members': 'Участники',
+  'nav.people': 'Сотрудники',
   'nav.users': 'Пользователи',
   'nav.signIn': 'Войти',
   'nav.signOut': 'Выйти',

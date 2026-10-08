@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
-import { Link, NavLink, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
+import type { ReactNode } from 'react'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 
 import { useAuth } from '../auth/AuthContext'
 import { displayName } from '../auth/types'
 import { useAsync } from '../hooks/useAsync'
 import { useI18n, LOCALES } from '../i18n'
+import type { TranslationKey } from '../i18n'
 import { useOrganization } from '../organizations/OrganizationContext'
 import { organizationsApi } from '../organizations/api'
 import type { Member } from '../organizations/api'
@@ -13,6 +15,9 @@ import type { Project } from '../projects/api'
 import { Listbox } from '../ui/Listbox'
 import { Icon } from './Icon'
 import type { IconName } from './Icon'
+import { NavRow } from './NavRow'
+import { navigatorGroupsFor } from './navigator'
+import type { NavigatorSectionId } from './navigator'
 
 /**
  * The application shell (section 29), laid out the way Huly lays it out.
@@ -104,44 +109,66 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 }
 
 interface Section {
-  /** URL prefix that selects this section. */
-  prefix: string
+  id: NavigatorSectionId
+  /**
+   * URL prefixes that select this section. The longest match wins, so
+   * `/users/me` opens Settings while `/users` itself belongs to People.
+   */
+  prefixes: string[]
   path: string
   icon: IconName
   label: string
 }
 
-/** The rail's entries, in the order Huly orders modules. */
+/** The rail's entries: four of them, the number Huly keeps. */
 function useSections(): Section[] {
   const { t } = useI18n()
-  const { user } = useAuth()
 
-  const sections: Section[] = [
-    { prefix: '/projects', path: '/projects', icon: 'projects', label: t('nav.projects') },
-    { prefix: '/tasks', path: '/tasks', icon: 'tasks', label: t('nav.allTasks') },
-    { prefix: '/members', path: '/members', icon: 'members', label: t('nav.members') },
-    { prefix: '/structure', path: '/structure', icon: 'members', label: t('nav.structure') },
+  return [
+    {
+      id: 'projects',
+      prefixes: ['/projects'],
+      path: '/projects',
+      icon: 'projects',
+      label: t('nav.projects'),
+    },
+    { id: 'tasks', prefixes: ['/tasks'], path: '/tasks', icon: 'tasks', label: t('nav.tasks') },
+    {
+      id: 'people',
+      // Three routes, one section: the views of an organization are not parts
+      // of the product, and each claiming a rail icon would undo the point of
+      // shrinking the rail.
+      prefixes: ['/members', '/users', '/structure'],
+      path: '/members',
+      icon: 'members',
+      label: t('nav.people'),
+    },
+    {
+      id: 'settings',
+      // `/users/me` is the account's own profile - the longest matching prefix
+      // keeps it in Settings even though it lives under `/users`.
+      prefixes: ['/settings', '/users/me'],
+      path: '/settings',
+      icon: 'settings',
+      label: t('nav.settings'),
+    },
   ]
-
-  // The portal user list is only meaningful to somebody who can grant
-  // administrator rights, so it appears for them and nobody else.
-  if (user?.is_superuser) {
-    sections.push({
-      prefix: '/users',
-      path: '/users',
-      icon: 'users',
-      label: t('nav.users'),
-    })
-  }
-
-  sections.push({ prefix: '/settings', path: '/settings', icon: 'settings', label: t('nav.settings') })
-  return sections
 }
 
-/** Which section the current URL belongs to. */
+/** Which section the current URL belongs to; the longest prefix wins. */
 function useActiveSection(sections: Section[]): Section | null {
   const { pathname } = useLocation()
-  return sections.find((section) => pathname.startsWith(section.prefix)) ?? null
+  let match: Section | null = null
+  let matchLength = 0
+  for (const section of sections) {
+    for (const prefix of section.prefixes) {
+      if (pathname.startsWith(prefix) && prefix.length > matchLength) {
+        match = section
+        matchLength = prefix.length
+      }
+    }
+  }
+  return match
 }
 
 /**
@@ -163,19 +190,16 @@ function Rail() {
       </Link>
 
       {sections.map((section) => (
-        <NavLink
-          key={section.prefix}
+        <Link
+          key={section.id}
           to={section.path}
           title={section.label}
           aria-label={section.label}
-          className={({ isActive }) =>
-            isActive || active?.prefix === section.prefix
-              ? 'rail__item rail__item--active'
-              : 'rail__item'
-          }
+          aria-current={active?.id === section.id ? 'page' : undefined}
+          className={active?.id === section.id ? 'rail__item rail__item--active' : 'rail__item'}
         >
           <Icon name={section.icon} size={20} />
-        </NavLink>
+        </Link>
       ))}
 
       <span className="rail__spacer" />
@@ -209,10 +233,9 @@ function Navigator({ onNavigate }: { onNavigate: () => void }) {
     )
   }
 
-  if (active.prefix === '/projects') return <ProjectsNavigator onNavigate={onNavigate} />
-  if (active.prefix === '/tasks') return <TasksNavigator onNavigate={onNavigate} />
-  if (active.prefix === '/structure') return <StructureNavigator onNavigate={onNavigate} />
-  if (active.prefix === '/members') return <MembersNavigator onNavigate={onNavigate} />
+  if (active.id === 'projects') return <ProjectsNavigator onNavigate={onNavigate} />
+  if (active.id === 'tasks') return <TasksNavigator onNavigate={onNavigate} />
+  if (active.id === 'people') return <PeopleNavigator onNavigate={onNavigate} />
   return <SettingsNavigator section={active} onNavigate={onNavigate} />
 }
 
@@ -220,44 +243,82 @@ function NavigatorHeader({ title }: { title: string }) {
   return <div className="nav__header">{title}</div>
 }
 
-function NavRow({
-  to,
+/**
+ * A collapsible submenu (stage 1.9).
+ *
+ * The header toggles rather than navigates: a header that sometimes does one
+ * and sometimes the other is a header nobody trusts. The group opens itself
+ * when the current URL belongs to it, so a deep link arrives with its submenu
+ * already unfolded, and once somebody clicks the header their choice sticks
+ * for the rest of the visit.
+ */
+function NavGroup({
+  titleKey,
   icon,
-  label,
-  end,
-  requires,
-  hides,
-  onNavigate,
+  active,
+  content,
 }: {
-  to: string
-  icon?: IconName
-  label: string
-  end?: boolean
-  /** Active only while this query parameter holds this value. */
-  requires?: { name: string; value: string }
-  /** Inactive while this query parameter is present at all. */
-  hides?: string
-  onNavigate: () => void
+  titleKey: TranslationKey
+  icon: IconName
+  active: boolean
+  /** The group's rows, as `<li>` elements; mounted only while open. */
+  content: ReactNode
 }) {
-  const [params] = useSearchParams()
-
-  // React Router's NavLink compares the pathname and ignores the query string, so
-  // two rows pointing at /tasks and /tasks?unfiled=1 both look active. Deciding
-  // from the parameters here is what keeps exactly one of them lit.
-  const active = requires
-    ? params.get(requires.name) === requires.value
-    : hides === undefined || !params.has(hides)
+  const { t } = useI18n()
+  const [override, setOverride] = useState<boolean | null>(null)
+  const open = override ?? active
 
   return (
-    <NavLink
-      to={to}
-      end={end}
-      onClick={onNavigate}
-      className={() => (active ? 'nav__item nav__item--active' : 'nav__item')}
-    >
-      {icon ? <Icon name={icon} size={15} /> : null}
-      <span className="nav__label">{label}</span>
-    </NavLink>
+    <li className="nav__group">
+      <button
+        type="button"
+        className={open ? 'nav__group-head nav__group-head--open' : 'nav__group-head'}
+        aria-expanded={open}
+        onClick={() => setOverride(!open)}
+      >
+        <Icon name={icon} size={15} />
+        <span className="nav__label">{t(titleKey)}</span>
+        <Icon name="chevron" size={13} className="nav__group-chevron" />
+      </button>
+      {open ? <ul className="nav__sublist">{content}</ul> : null}
+    </li>
+  )
+}
+
+/**
+ * The submenus registered by the modules (stage 1.9).
+ *
+ * The shell cannot import them - `core` never depends on `modules` - so the
+ * registry in `navigator.ts` is where a module declares what its section's
+ * submenu holds, and this is where they render.
+ */
+function NavigatorGroups({
+  section,
+  onNavigate,
+}: {
+  section: NavigatorSectionId
+  onNavigate: () => void
+}) {
+  const location = useLocation()
+  const groups = navigatorGroupsFor(section)
+  if (groups.length === 0) return null
+
+  return (
+    <>
+      {groups.map((group) => (
+        <NavGroup
+          key={group.id}
+          titleKey={group.titleKey}
+          icon={group.icon}
+          active={
+            group.active
+              ? group.active({ pathname: location.pathname, search: location.search })
+              : false
+          }
+          content={group.content({ onNavigate })}
+        />
+      ))}
+    </>
   )
 }
 
@@ -306,17 +367,18 @@ function TasksNavigator({ onNavigate }: { onNavigate: () => void }) {
 
   return (
     <nav className="shell__nav nav">
-      <NavigatorHeader title={t('nav.allTasks')} />
+      <NavigatorHeader title={t('nav.tasks')} />
 
       <ul className="nav__list">
         <li>
           {/* The two rows differ only by query string, and NavLink ignores it, so
-              each one declares which parameter makes it the current view. */}
+              each one declares which parameter makes it the current view. Without
+              `end` the first row also stays lit on a task's own page, where the
+              list it points at is the section rather than the destination. */}
           <NavRow
             to="/tasks"
             icon="tasks"
             label={t('tasks.allTasks')}
-            end
             hides="unfiled"
             onNavigate={onNavigate}
           />
@@ -332,46 +394,31 @@ function TasksNavigator({ onNavigate }: { onNavigate: () => void }) {
             onNavigate={onNavigate}
           />
         </li>
+
+        <NavigatorGroups section="tasks" onNavigate={onNavigate} />
       </ul>
     </nav>
   )
 }
 
 /**
- * The two views of the org chart.
+ * The people section (stage 1.9): one panel for the three routes the rail
+ * stopped separating.
  *
- * A tab pair rather than two sections: they are the same data read two ways, and
- * the chart's usual weakness is being unable to find one person in it - so the
- * list is always one click away from the picture rather than on a different page.
- */
-function StructureNavigator({ onNavigate }: { onNavigate: () => void }) {
-  const { t } = useI18n()
-
-  return (
-    <nav className="shell__nav nav">
-      <NavigatorHeader title={t('nav.structure')} />
-
-      <ul className="nav__list">
-        <li>
-          <NavRow to="/structure" icon="members" label={t('org.structure')} end onNavigate={onNavigate} />
-        </li>
-        <li>
-          <NavRow to="/members" icon="user" label={t('members.title')} onNavigate={onNavigate} />
-        </li>
-      </ul>
-    </nav>
-  )
-}
-
-/**
- * The people in the organization.
+ * "Пользователи" and "Оргструктура" are submenus rather than rail entries:
+ * they are views of the same organization, and a header that expands is a
+ * different promise from a rail icon that navigates - so the routes stay
+ * routes, gathered under headings that say what kind of view they open.
  *
- * There is no per-member page, so the rows name people without linking anywhere:
- * four rows pointing at one URL with four "active" marks would be a lie. The
- * panel indexes the section; it is not a second copy of the table beside it.
+ * The people themselves are still listed as read-only rows: there is no
+ * per-member page to link to, and four rows pointing at one URL with four
+ * "active" marks would be a lie. The panel indexes the section; it is not a
+ * second copy of the table beside it.
  */
-function MembersNavigator({ onNavigate }: { onNavigate: () => void }) {
+function PeopleNavigator({ onNavigate }: { onNavigate: () => void }) {
   const { t } = useI18n()
+  const { user } = useAuth()
+  const { pathname } = useLocation()
   const { current: organization } = useOrganization()
   const organizationId = organization?.id ?? null
   const members = useAsync(
@@ -384,17 +431,13 @@ function MembersNavigator({ onNavigate }: { onNavigate: () => void }) {
 
   return (
     <nav className="shell__nav nav">
-      <NavigatorHeader title={t('nav.members')} />
+      <NavigatorHeader title={t('nav.people')} />
 
       <ul className="nav__list">
         <li>
           <NavRow to="/members" icon="members" label={t('members.allMembers')} end onNavigate={onNavigate} />
         </li>
 
-        {/* The people are listed as read-only rows rather than links: there is no
-            per-member page to link to, and four rows pointing at the same URL
-            with four "active" marks would be a lie. The panel is an index of the
-            section, not a second copy of the table beside it. */}
         {(members.data ?? []).map((member) => (
           <li key={member.user_id}>
             <div className="nav__item nav__item--static">
@@ -403,6 +446,35 @@ function MembersNavigator({ onNavigate }: { onNavigate: () => void }) {
             </div>
           </li>
         ))}
+
+        {/* The portal user list is only meaningful to somebody who can grant
+            administrator rights, so the submenu appears for them and nobody
+            else. */}
+        {user?.is_superuser ? (
+          <NavGroup
+            titleKey="nav.users"
+            icon="users"
+            active={pathname.startsWith('/users')}
+            content={
+              <li>
+                <NavRow to="/users" icon="users" label={t('nav.users')} end onNavigate={onNavigate} />
+              </li>
+            }
+          />
+        ) : null}
+
+        <NavGroup
+          titleKey="nav.structure"
+          icon="members"
+          active={pathname.startsWith('/structure')}
+          content={
+            <li>
+              <NavRow to="/structure" icon="members" label={t('org.structure')} end onNavigate={onNavigate} />
+            </li>
+          }
+        />
+
+        <NavigatorGroups section="people" onNavigate={onNavigate} />
       </ul>
     </nav>
   )
@@ -428,7 +500,9 @@ function SettingsNavigator({
         </li>
         {user?.is_superuser ? (
           <li>
-            <NavRow to="/users" icon="users" label={t('nav.users')} onNavigate={onNavigate} />
+            {/* `end` keeps this unlit on /users/me, which is the profile and
+                belongs to the row below. */}
+            <NavRow to="/users" icon="users" label={t('nav.users')} end onNavigate={onNavigate} />
           </li>
         ) : null}
         <li>

@@ -332,6 +332,12 @@ ol {
 
 .shell__rail {
   grid-area: rail;
+
+  /* Stage 1.10: the drawer animates out from under this edge, so the rail
+     paints above it - the menu slides out from behind the rail rather than
+     across it, and the rail stays clickable while the drawer is open. */
+  position: relative;
+  z-index: 25;
 }
 .shell__nav {
   grid-area: nav;
@@ -890,6 +896,65 @@ button.orgbox__title {
   font-size: 0.75rem;
 }
 
+/**
+ * A collapsible submenu (stage 1.9).
+ *
+ * The header is a button, not a link: it expands the rows below rather than
+ * navigating, so it gets a cursor and a hover like any other control, and no
+ * active background of its own - the row that is actually current is lit
+ * inside the sublist.
+ */
+.nav__group-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: calc(100% - var(--space-3) * 2);
+  height: 2rem;
+  margin: 0 var(--space-3);
+  padding: 0 var(--space-3);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  text-align: left;
+}
+
+.nav__group-head:hover {
+  background: var(--nav-hover);
+  color: var(--text);
+}
+
+.nav__group-head svg {
+  flex-shrink: 0;
+  color: var(--text-faint);
+}
+
+.nav__group-head:hover svg {
+  color: var(--text);
+}
+
+.nav__group-head .nav__label {
+  flex: 1;
+  font-weight: 500;
+}
+
+/* The caret points right while folded and down while open. */
+.nav__group-chevron {
+  transform: rotate(-90deg);
+  transition: transform 0.15s ease;
+}
+
+.nav__group-head--open .nav__group-chevron {
+  transform: none;
+}
+
+.nav__sublist {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
 .nav__footer {
   flex-shrink: 0;
   padding: var(--space-2) var(--space-3) var(--space-4);
@@ -1120,27 +1185,30 @@ input[type='checkbox'] {
 
 /* Date and time inputs (stage 1.5).
  *
- * Chromium skins a date control itself: the segment being edited gets an OS
- * selection box, which is replaced here with the theme's own selection tint
- * (down to the sub-fields the arrow keys step through) so the field reads like
- * the rest of the form. The picker glyph is dimmed to the muted text weight
- * and brightens on hover, matching input behavior elsewhere. */
+ * Chromium skins the segment being edited with the OS selection color, and
+ * that highlight cannot be recolored directly: author rules using a
+ * pseudo-class on the internal segments (`::-webkit-datetime-edit-*-field:
+ * focus`) never match — only the UA sheet can do that — while the system box
+ * still appears. What does match from an author stylesheet is the ancestor
+ * state, so while the field itself is focused every segment is painted with
+ * the theme's selection tint. It shares the background layer with the system
+ * box, replacing it rather than fighting it, and it holds for both keyboard
+ * and pointer focus. The picker glyph is dimmed to the muted text weight and
+ * brightens on hover, matching input behavior elsewhere. */
 input[type='date']::-webkit-datetime-edit,
 input[type='datetime-local']::-webkit-datetime-edit {
   background: none;
 }
 
-input[type='date']::-webkit-datetime-edit:focus,
-input[type='datetime-local']::-webkit-datetime-edit:focus {
-  background: none;
-  color: inherit;
-}
-
-input[type='date']::-webkit-datetime-edit-year-field:focus,
-input[type='date']::-webkit-datetime-edit-month-field:focus,
-input[type='date']::-webkit-datetime-edit-day-field:focus,
-input[type='datetime-local']::-webkit-datetime-edit-hour-field:focus,
-input[type='datetime-local']::-webkit-datetime-edit-minute-field:focus {
+input[type='date']:focus::-webkit-datetime-edit-year-field,
+input[type='date']:focus::-webkit-datetime-edit-month-field,
+input[type='date']:focus::-webkit-datetime-edit-day-field,
+input[type='datetime-local']:focus::-webkit-datetime-edit-year-field,
+input[type='datetime-local']:focus::-webkit-datetime-edit-month-field,
+input[type='datetime-local']:focus::-webkit-datetime-edit-day-field,
+input[type='datetime-local']:focus::-webkit-datetime-edit-hour-field,
+input[type='datetime-local']:focus::-webkit-datetime-edit-minute-field,
+input[type='datetime-local']:focus::-webkit-datetime-edit-ampm-field {
   background: color-mix(in srgb, var(--accent) 12%, transparent);
   color: inherit;
   outline: none;
@@ -2203,32 +2271,43 @@ textarea {
       'main';
   }
 
-  /* The click-away backdrop under the drawer. Hidden with visibility just like
-     the navigator, so a closed scrim is neither focusable nor read aloud, and
-     given the same fade. It starts at the rail's edge because the rail stays
-     interactive on narrow windows. */
+  /* The click-away backdrop under the drawer (stage 1.10: it now fades with
+     the drawer instead of popping in beside it). Hidden with visibility as
+     well, so a closed scrim is neither focusable nor read aloud. It starts at
+     the rail's edge because the rail stays interactive on narrow windows. */
   .shell__nav-scrim {
     position: fixed;
     inset: 0 0 0 var(--rail-width);
     z-index: 15;
     background: color-mix(in srgb, var(--text) 12%, transparent);
+    opacity: 0;
     visibility: hidden;
-    transition: visibility 0s linear 0.15s;
+    transition:
+      opacity 0.15s ease,
+      visibility 0s linear 0.15s;
   }
 
   .shell--nav-open .shell__nav-scrim {
+    opacity: 1;
     visibility: visible;
-    transition: visibility 0s;
+    transition:
+      opacity 0.15s ease,
+      visibility 0s;
   }
 
   /* The navigator becomes a drawer over the page, as Huly does on a narrow
      window. The rail stays because it is the only way to change section.
 
-     It is hidden with `visibility` rather than only by transform: a panel parked
-     off the left edge still gets focus from the keyboard and still shows up in
-     the accessibility tree, so a screen reader would read a menu the reader
-     cannot see. `visibility` removes it from both, and the transition is moved
-     onto `transform` alone so the panel still slides. */
+      Stage 1.10: the panel slides *and* fades on one easing and one duration,
+      and it parks behind the rail (the rail paints above it), so the menu
+      comes out from the rail's edge instead of sweeping across it.
+
+      It is hidden with `visibility` rather than only by transform: a panel
+      parked off the left edge still gets focus from the keyboard and still
+      shows up in the accessibility tree, so a screen reader would read a menu
+      the reader cannot see. `visibility` removes it from both, and its
+      transition is delayed by the animation's length so the panel finishes
+      sliding before it stops existing. */
   .shell__nav {
     position: fixed;
     top: 0;
@@ -2237,19 +2316,53 @@ textarea {
     width: var(--navigator-width);
     height: 100vh;
     box-shadow: var(--shadow-lg);
+    opacity: 0;
     visibility: hidden;
     transform: translateX(-100%);
     transition:
       transform 0.15s ease,
+      opacity 0.15s ease,
       visibility 0s linear 0.15s;
   }
 
   .shell--nav-open .shell__nav {
+    opacity: 1;
     visibility: visible;
     transform: none;
     transition:
       transform 0.15s ease,
+      opacity 0.15s ease,
       visibility 0s;
+  }
+
+  /* The rows arrive one after another behind the sliding panel (stage 1.10):
+     a small wave rather than the whole list appearing at once. The delays
+     stop growing at the fifth row, so a long list still arrives together. */
+  .shell--nav-open .nav__list > li {
+    animation: nav-row-in 0.15s ease backwards;
+  }
+
+  .shell--nav-open .nav__list > li:nth-child(2) {
+    animation-delay: 0.03s;
+  }
+
+  .shell--nav-open .nav__list > li:nth-child(3) {
+    animation-delay: 0.06s;
+  }
+
+  .shell--nav-open .nav__list > li:nth-child(4) {
+    animation-delay: 0.09s;
+  }
+
+  .shell--nav-open .nav__list > li:nth-child(n + 5) {
+    animation-delay: 0.12s;
+  }
+
+  @keyframes nav-row-in {
+    from {
+      opacity: 0;
+      transform: translateY(-3px);
+    }
   }
 
   .shell__burger {
@@ -2291,5 +2404,21 @@ textarea {
 
   .account__name {
     display: none;
+  }
+}
+
+/* Stage 1.10: the drawer's slide, the scrim's fade, the row stagger and the
+   caret's turn are all decoration on top of an interaction that works without
+   them. With reduced motion requested, they are not there at all - the menu
+   simply appears and disappears. */
+@media (prefers-reduced-motion: reduce) {
+  .shell__nav,
+  .shell__nav-scrim,
+  .nav__group-chevron {
+    transition: none;
+  }
+
+  .shell--nav-open .nav__list > li {
+    animation: none;
   }
 }

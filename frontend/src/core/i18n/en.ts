@@ -45,10 +45,12 @@ export const en = {
 
   // --- navigation -------------------------------------------------------
   'nav.projects': 'Projects',
+  'nav.tasks': 'Tasks',
   'nav.allTasks': 'All tasks',
   'nav.organization': 'Organization',
   'nav.settings': 'Portal settings',
   'nav.members': 'Members',
+  'nav.people': 'People',
   'nav.users': 'Users',
   'nav.signIn': 'Sign in',
   'nav.signOut': 'Sign out',

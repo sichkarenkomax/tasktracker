@@ -18,6 +18,13 @@ export interface SavedFilter {
 const STORAGE_KEY = 'tasktracker.savedFilters'
 
 /**
+ * Fired after every successful write, so the navigator's saved-filters
+ * submenu can refresh: it reads the same list, and localStorage itself is
+ * silent within the tab that changed it.
+ */
+export const SAVED_FILTERS_EVENT = 'tasktracker:savedFiltersChanged'
+
+/**
  * Read the saved list, repairing rather than trusting it.
  *
  * A value written by an older build can be a bare array, a list of strings from
@@ -54,6 +61,7 @@ export function readSavedFilters(): SavedFilter[] {
 export function writeSavedFilters(saved: SavedFilter[]): void {
   try {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(saved))
+    window.dispatchEvent(new Event(SAVED_FILTERS_EVENT))
   } catch {
     /* preference only */
   }

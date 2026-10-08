@@ -5,6 +5,7 @@ import { RequireAuth } from '../core/auth/RequireAuth'
 import { I18nProvider } from '../core/i18n'
 import { OrganizationProvider } from '../core/organizations/OrganizationContext'
 import { AppShell } from '../core/layout/AppShell'
+import { registerNavigatorGroup } from '../core/layout/navigator'
 import { LoginPage } from './pages/LoginPage'
 import { NotFoundPage } from './pages/NotFoundPage'
 import { PortalSettingsPage } from './pages/PortalSettingsPage'
@@ -18,6 +19,11 @@ import { OrgStructurePage } from '../core/organizations/OrgStructurePage'
 import { UsersPage } from '../core/users/UsersPage'
 import { TaskDetailPage } from '../modules/tasks/pages/TaskDetailPage'
 import { TaskListPage } from '../modules/tasks/pages/TaskListPage'
+import { savedFiltersNavigatorGroup } from '../modules/tasks/components/SavedFiltersNavigatorGroup'
+
+// Navigator submenus are owned by the modules and wired in here, at the one
+// layer allowed to import in both directions (stage 1.9).
+registerNavigatorGroup(savedFiltersNavigatorGroup)
 
 /**
  * The route table (section 29).
