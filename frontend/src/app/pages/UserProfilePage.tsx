@@ -1,12 +1,16 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
 import { authApi } from '../../core/auth/api'
 import { useAuth } from '../../core/auth/AuthContext'
 import { displayName } from '../../core/auth/types'
+import { filesApi } from '../../core/files/api'
+import { prepareAvatar } from '../../core/files/prepare'
 import { formatDateTime } from '../../core/format'
 import { useMutation } from '../../core/hooks/useAsync'
 import { useI18n } from '../../core/i18n'
+import { useOrganization } from '../../core/organizations/OrganizationContext'
+import { Avatar } from '../../core/users/Avatar'
 
 /**
  * The signed-in person's own account.
@@ -80,6 +84,7 @@ export function UserProfilePage() {
       <section className="panel">
         <h2>{displayName(user)}</h2>
         <form onSubmit={submitProfile}>
+          <AvatarUpload />
           <div className="fields">
             <label className="field">
               <span>{t('auth.firstName')}</span>
@@ -181,5 +186,107 @@ export function UserProfilePage() {
         </button>
       </section>
     </section>
+  )
+}
+
+/**
+ * The picture (stage 2.3).
+ *
+ * Nothing here asks the person to crop anything: `prepareAvatar` centres and
+ * squares the image in the browser, and the server is sent one small square. It is
+ * also the first thing in the product to go through the files API, so the limits
+ * and the quota the portal declares are read *before* the upload rather than
+ * discovered after it - the panel says how much room is left and refuses a file
+ * the portal would refuse anyway.
+ */
+function AvatarUpload() {
+  const { t } = useI18n()
+  const { user, refresh } = useAuth()
+  const { current: organization } = useOrganization()
+  const organizationId = organization?.id ?? null
+  const inputRef = useRef<HTMLInputElement>(null)
+  const [busy, setBusy] = useState(false)
+  const [message, setMessage] = useState<string | null>(null)
+
+  const upload = useMutation<File, void>(async (file) => {
+    if (!organizationId || !user) throw new Error(t('error.generic'))
+    const stored = await filesApi.upload(organizationId, file)
+    await authApi.updateProfile({
+      avatar_url: filesApi.downloadUrl(stored.id, organizationId),
+    })
+    // The header and this page both read the signed-in person from the auth
+    // context, so without this the new picture is stored and still not shown.
+    await refresh()
+  })
+
+  const limits = useMutation<void, { remaining_bytes: number | null }>(async () => {
+    if (!organizationId) throw new Error(t('error.generic'))
+    const room = await filesApi.limits(organizationId)
+    return { remaining_bytes: room.remaining_bytes }
+  })
+
+  if (!user) return null
+
+  async function onPick(event: React.ChangeEvent<HTMLInputElement>) {
+    const picked = event.target.files?.[0]
+    // Clear the input so choosing the same file twice in a row still fires.
+    event.target.value = ''
+    if (!picked || !organizationId) return
+
+    setMessage(null)
+    setBusy(true)
+    try {
+      const room = await limits.run()
+      if (room === null) {
+        setMessage(limits.error ?? t('error.generic'))
+        return
+      }
+      if (room.remaining_bytes === 0) {
+        setMessage(t('profile.avatarNoRoom'))
+        return
+      }
+      // Cropped and shrunk here, so the portal never spends a byte of CPU on an
+      // image it does not need to understand.
+      const prepared = await prepareAvatar(picked, 512)
+      if (room.remaining_bytes !== null && prepared.size > room.remaining_bytes) {
+        setMessage(t('profile.avatarTooBig'))
+        return
+      }
+      const done = await upload.run(prepared)
+      if (done === null) setMessage(upload.error)
+    } catch {
+      setMessage(t('error.generic'))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="avatar-upload">
+      <Avatar src={user.avatar_url} name={displayName(user)} size="lg" />
+      <div className="avatar-upload__controls">
+        <input
+          ref={inputRef}
+          type="file"
+          accept="image/png,image/jpeg,image/gif,image/webp"
+          className="visually-hidden"
+          onChange={(event) => void onPick(event)}
+        />
+        <button
+          type="button"
+          className="button"
+          disabled={busy}
+          onClick={() => inputRef.current?.click()}
+        >
+          {busy ? t('app.saving') : t('profile.avatarChoose')}
+        </button>
+        <p className="muted">{t('profile.avatarHint')}</p>
+        {message ? (
+          <p className="field__error" role="alert">
+            {message}
+          </p>
+        ) : null}
+      </div>
+    </div>
   )
 }

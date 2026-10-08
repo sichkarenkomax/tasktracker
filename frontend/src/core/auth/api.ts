@@ -32,7 +32,7 @@ export const authApi = {
     return api.get<SessionUser>('/users/me')
   },
 
-  updateProfile(body: { first_name: string; last_name: string }) {
+  updateProfile(body: { first_name?: string; last_name?: string; avatar_url?: string | null }) {
     return api.patch<SessionUser>('/users/me', body)
   },
 }

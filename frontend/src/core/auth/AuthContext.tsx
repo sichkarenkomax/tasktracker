@@ -32,6 +32,8 @@ interface AuthState {
     first_name?: string
   }) => Promise<void>
   signOut: () => Promise<void>
+  /** Re-read the person, after something else changed their profile. */
+  refresh: () => Promise<void>
 }
 
 const AuthContext = createContext<AuthState | null>(null)
@@ -97,9 +99,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
+  /**
+   * Re-read the signed-in person.
+   *
+   * Needed after something elsewhere changed their profile - an avatar upload,
+   * a name typed in another tab - because the header and the profile page both
+   * read this copy, and a stale one is how a saved change appears not to have
+   * happened.
+   */
+  const refresh = useCallback(async () => {
+    try {
+      setUser(await authApi.me())
+    } catch {
+      // A refresh is best-effort: the session is unchanged either way, and a
+      // failed read must not sign anybody out.
+    }
+  }, [])
+
   const value = useMemo<AuthState>(
-    () => ({ status, user, error, signIn, signUp, signOut }),
-    [status, user, error, signIn, signUp, signOut],
+    () => ({ status, user, error, signIn, signUp, signOut, refresh }),
+    [status, user, error, signIn, signUp, signOut, refresh],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
