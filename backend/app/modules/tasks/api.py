@@ -14,7 +14,7 @@ is unaffected - the same trade-off Core's project routes make.
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Query, status
@@ -127,8 +127,8 @@ def _filters(
     assignee_id: UUID | None = None,
     unfiled: bool = False,
     creator_id: UUID | None = None,
-    due_from: date | None = None,
-    due_to: date | None = None,
+    due_from: datetime | None = None,
+    due_to: datetime | None = None,
     overdue: bool = False,
     search: str | None = None,
 ) -> TaskFilters:
@@ -187,8 +187,8 @@ async def list_tasks(
     assignee_id: UUID | None = None,
     unfiled: bool = False,
     creator_id: UUID | None = None,
-    due_from: date | None = None,
-    due_to: date | None = None,
+    due_from: datetime | None = None,
+    due_to: datetime | None = None,
     overdue: bool = False,
     search: str | None = Query(default=None, max_length=200),
     sort: str = Query(default=DEFAULT_SORT, pattern=SORT_PATTERN),
@@ -277,8 +277,8 @@ async def list_project_tasks(
     priority: list[TaskPriority] | None = Query(default=None),
     assignee_id: UUID | None = None,
     creator_id: UUID | None = None,
-    due_from: date | None = None,
-    due_to: date | None = None,
+    due_from: datetime | None = None,
+    due_to: datetime | None = None,
     overdue: bool = False,
     search: str | None = Query(default=None, max_length=200),
     sort: str = Query(default=DEFAULT_SORT, pattern=SORT_PATTERN),

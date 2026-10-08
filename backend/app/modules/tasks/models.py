@@ -13,7 +13,6 @@ from enum import StrEnum
 from uuid import UUID
 
 from sqlalchemy import (
-    Date,
     DateTime,
     ForeignKey,
     Index,
@@ -214,8 +213,14 @@ class Task(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         nullable=False,
     )
 
-    #: A deadline is a day, not an instant: "due Friday" is what people mean.
-    due_date: Mapped[date | None] = mapped_column(Date)
+    #: A deadline is an instant, not a day.
+    #:
+    #: It was a `Date` while the only calendar in the product was the browser's,
+    #: which cannot even be themed. Now that the deadline carries a time of day
+    #: ("hand it in by 18:00"), "overdue" has to mean "the moment passed" and the
+    #: column has to hold that moment. Rows written before the change become
+    #: midnight UTC on their old day, which is the only reading a bare date had.
+    due_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     #: --- planning --------------------------------------------------------------

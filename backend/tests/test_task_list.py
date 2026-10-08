@@ -91,6 +91,11 @@ def _titles(page: dict[str, Any]) -> list[str]:
     return [item["title"] for item in page["items"]]
 
 
+def _midnight_utc(day: date) -> str:
+    """A deadline written as a bare date, read back the way the API stores it."""
+    return f"{day.isoformat()}T00:00:00Z"
+
+
 class TestFiltering:
     async def test_by_status(self, client: AsyncClient, owner: dict[str, Any]) -> None:
         project_id = await _seed(client, owner)
@@ -168,7 +173,13 @@ class TestFiltering:
     async def test_due_date_range(self, client: AsyncClient, owner: dict[str, Any]) -> None:
         project_id = await _seed(client, owner)
 
-        page = await _list(client, owner, project_id=project_id, due_to=str(TODAY))
+        # The bounds are instants, and a client choosing "up to today" means the
+        # end of the day - which is why it sends `23:59:59Z` rather than a bare
+        # date. A bare `due_to` would be midnight, and would drop everything set
+        # later that same day.
+        page = await _list(
+            client, owner, project_id=project_id, due_to=f"{TODAY.isoformat()}T23:59:59Z"
+        )
 
         assert _titles(page) == ["Ship the release notes"]
 
@@ -256,8 +267,10 @@ class TestSorting:
             client, owner, project_id=project_id, sort="due_date", direction="desc"
         )
 
-        assert ascending["items"][0]["due_date"] == str(TODAY - timedelta(days=3))
-        assert descending["items"][0]["due_date"] == str(TODAY + timedelta(days=7))
+        # Deadlines come back as instants: the fixtures were seeded with bare
+        # dates, which the API reads as midnight UTC on that day.
+        assert ascending["items"][0]["due_date"] == _midnight_utc(TODAY - timedelta(days=3))
+        assert descending["items"][0]["due_date"] == _midnight_utc(TODAY + timedelta(days=7))
         assert ascending["items"][-1]["due_date"] is None
         assert descending["items"][-1]["due_date"] is None
 

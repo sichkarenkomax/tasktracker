@@ -8,7 +8,7 @@ leak another organization's work (docs/architecture.md, section 10).
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import UTC, datetime
 from typing import Any, Final, cast
 from uuid import UUID
 
@@ -51,11 +51,14 @@ class TaskFilters:
     #: Only tasks not filed under any project - the inbox as its own view.
     unfiled: bool = False
     creator_id: UUID | None = None
-    due_from: date | None = None
-    due_to: date | None = None
+    due_from: datetime | None = None
+    due_to: datetime | None = None
     overdue: bool = False
     search: str | None = None
-    today: date = field(default_factory=date.today)
+    #: "Now" for the overdue test, injectable so a test can say what time it is.
+    #: Aware and in UTC, because the column is: comparing an aware value with a
+    #: naive one would either raise or silently read as the database's zone.
+    now: datetime = field(default_factory=lambda: datetime.now(UTC))
 
     def conditions(self) -> list[ColumnElement[bool]]:
         clauses: list[ColumnElement[bool]] = [Task.organization_id == self.organization_id]
@@ -77,8 +80,10 @@ class TaskFilters:
             clauses.append(Task.due_date <= self.due_to)
         if self.overdue:
             # Overdue means "the deadline passed and the task is still open"; a
-            # closed task can never be overdue no matter how old it is.
-            clauses.append(Task.due_date < self.today)
+            # closed task can never be overdue no matter how old it is. With the
+            # deadline an instant, a task due later today at 18:00 is not overdue
+            # at 10:00 - which is the whole reason the column grew a time.
+            clauses.append(Task.due_date < self.now)
             clauses.append(Task.status.notin_(tuple(TERMINAL_STATUSES)))
         if self.search:
             clauses.extend(_search_conditions(self.search))

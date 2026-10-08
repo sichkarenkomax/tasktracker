@@ -321,8 +321,37 @@ class TestUpdate:
             headers=headers,
         )
 
-        assert renamed.json()["due_date"] == "2030-01-31"
+        # A bare date is read as midnight UTC and comes back as that instant.
+        assert renamed.json()["due_date"] == "2030-01-31T00:00:00Z"
         assert cleared.json()["due_date"] is None
+
+    async def test_a_deadline_keeps_its_time_of_day(
+        self, client: AsyncClient, owner: dict[str, Any]
+    ) -> None:
+        """A deadline with an hour on it is the reason the column became an instant."""
+        organization_id = owner["organization"]["id"]
+        headers = auth_headers(owner["token"])
+
+        # An offset is normalized to UTC rather than shifted: 18:00 in UTC+3 is
+        # 15:00 UTC, and it must be the same moment, not the same wall clock.
+        later = await client.post(
+            "/api/v1/tasks",
+            params={"organization_id": organization_id},
+            json={"title": "Due this evening", "due_date": "2030-01-31T18:00:00+03:00"},
+            headers=headers,
+        )
+        assert later.status_code == 201, later.text
+        assert later.json()["due_date"] == "2030-01-31T15:00:00Z"
+
+        # A time with no offset is the client's own clock, and only the client
+        # knows its zone - so it is refused rather than guessed at.
+        ambiguous = await client.post(
+            "/api/v1/tasks",
+            params={"organization_id": organization_id},
+            json={"title": "Due at an unknown hour", "due_date": "2030-01-31T18:00:00"},
+            headers=headers,
+        )
+        assert ambiguous.status_code == 422, ambiguous.text
 
     async def test_viewer_cannot_update(
         self, client: AsyncClient, owner: dict[str, Any], outsider: dict[str, Any]

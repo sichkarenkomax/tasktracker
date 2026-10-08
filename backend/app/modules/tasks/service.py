@@ -9,7 +9,7 @@ module (section 19).
 
 from __future__ import annotations
 
-from datetime import UTC, date, datetime
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Final
 from uuid import UUID
 
@@ -122,7 +122,7 @@ class TaskService:
         title: str,
         description: str | None = None,
         priority: TaskPriority | None = None,
-        due_date: date | None = None,
+        due_date: datetime | None = None,
         assignee_id: UUID | None = None,
         status: TaskStatus | None = None,
         planned_start: datetime | None = None,
@@ -192,7 +192,7 @@ class TaskService:
         description: str | None = None,
         description_set: bool = False,
         priority: TaskPriority | None = None,
-        due_date: date | None = None,
+        due_date: datetime | None = None,
         due_date_set: bool = False,
         status: TaskStatus | None = None,
         project_id: UUID | None = None,
