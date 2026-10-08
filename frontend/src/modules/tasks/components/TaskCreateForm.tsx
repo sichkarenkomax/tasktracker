@@ -1,8 +1,8 @@
 import { useState } from 'react'
 
+import { useAuth } from '../../../core/auth/AuthContext'
 import { useI18n } from '../../../core/i18n'
 import { useMutation } from '../../../core/hooks/useAsync'
-import { Icon } from '../../../core/layout/Icon'
 import type { Member } from '../../../core/organizations/api'
 import type { Project } from '../../../core/projects/api'
 import { DateField } from '../../../core/ui/DateField'
@@ -11,23 +11,28 @@ import { useTaskVocabulary } from './Badges'
 import type { TaskCreate, TaskPriority } from '../types'
 
 /**
- * The inline "new task" form (section 30: the list has a create action).
+ * The task form itself (section 30).
  *
- * It lives above the table rather than behind a modal because adding a task is
- * the most frequent action in the product, and a dialog per task turns the daily
- * workflow into click, wait, type, confirm.
+ * It used to be an inline panel above the task table: a button that unfolded a
+ * form in the list's header. That was rejected - a form opening over a table
+ * pushes the whole page down, so the rows a person was reading move under the
+ * cursor - and the form now lives on its own page, `/tasks/new`, which is also
+ * where it can grow into what the roadmap still owes it (attachments, the planned
+ * window) without growing a dialog's own scrollbar.
  *
- * Everything the form shows is sent. A control that looks editable and is not is
- * worse than no control: the reader believes the priority was recorded and only
- * finds out from the list.
+ * What is *not* here is any second opinion about the input: everything the form
+ * shows is sent. A control that looks editable and is not worse than no control -
+ * the reader believes the priority was recorded and finds out from the list.
  */
 export interface TaskCreateFormProps {
   members: Member[]
   projects: Project[]
-  /** Fixed on a project-scoped list; absent on the organization-wide one. */
+  /** Fixed on a project-scoped page; absent on the organization-wide one. */
   projectId?: string
   disabled?: boolean
+  /** Called with the task the API created, so the page can go and look at it. */
   onCreate: (input: TaskCreate) => Promise<void>
+  onCancel: () => void
 }
 
 export function TaskCreateForm({
@@ -36,17 +41,20 @@ export function TaskCreateForm({
   projectId,
   disabled,
   onCreate,
+  onCancel,
 }: TaskCreateFormProps) {
   const { t } = useI18n()
   const { priorityOptions } = useTaskVocabulary()
-  const [open, setOpen] = useState(false)
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [priority, setPriority] = useState<TaskPriority | ''>('')
   const [dueDate, setDueDate] = useState('')
-  // The person creating the task is the default responsible one, so the field is
-  // never blank and the common case needs no decision at all.
-  const [assigneeId, setAssigneeId] = useState('')
+// The person creating the task is the default responsible one, and the field
+  // says so rather than sitting blank: the API would make the same choice for a
+  // missing key, but a form that shows an empty "responsible" and then creates a
+  // task with somebody responsible is a form that lied.
+  const { user } = useAuth()
+  const [assigneeId, setAssigneeId] = useState(user?.id ?? '')
   const [targetProject, setTargetProject] = useState(projectId ?? '')
   const [localError, setLocalError] = useState<string | null>(null)
   const mutation = useMutation<TaskCreate, void>(async (input) => {
@@ -57,17 +65,7 @@ export function TaskCreateForm({
     return <p className="muted">{t('tasks.cannotCreate')}</p>
   }
 
-  function reset() {
-    setTitle('')
-    setDescription('')
-    setPriority('')
-    setDueDate('')
-    setAssigneeId('')
-    setLocalError(null)
-    setOpen(false)
-  }
-
-  async function submit(event: React.FormEvent) {
+async function submit(event: React.FormEvent) {
     event.preventDefault()
     const trimmed = title.trim()
     if (!trimmed) {
@@ -84,7 +82,7 @@ export function TaskCreateForm({
       setLocalError(t('tasks.noResponsible'))
       return
     }
-    const created = await mutation.run({
+    await mutation.run({
       title: trimmed,
       // An empty textarea means "no description", which is a value the API
       // understands; sending "" would store an empty string instead of NULL.
@@ -95,22 +93,16 @@ export function TaskCreateForm({
       // will do it", and rejects an explicit null because nobody must not be on a
       // task.
       ...(assigneeId === '' ? {} : { assignee_id: assigneeId }),
-      ...(projectId ? {} : { project_id: targetProject === '' ? null : targetProject }),
+...(projectId ? {} : { project_id: targetProject === '' ? null : targetProject }),
     })
-    if (created !== null) reset()
-  }
-
-  if (!open) {
-    return (
-      <button type="button" className="button button--primary" onClick={() => setOpen(true)}>
-        <Icon name="plus" size={15} />
-        {t('tasks.newTask')}
-      </button>
-    )
+    // A successful create hands the task back to the page, which opens it. The
+    // form is not cleared for another one: adding three tasks in a row is a
+    // person working through a list, and each of those deserves its own card
+    // rather than staying on an empty form.
   }
 
   return (
-    <form className="create-form" onSubmit={submit}>
+    <form className="create-form create-form--page" onSubmit={submit}>
       <div className="create-form__grid">
         <label className="create-form__title">
           <span>{t('tasks.title')}</span>
@@ -192,7 +184,7 @@ export function TaskCreateForm({
         <button type="submit" className="button button--primary" disabled={mutation.pending}>
           {mutation.pending ? t('app.loading') : t('tasks.createTask')}
         </button>
-        <button type="button" className="button" onClick={reset}>
+        <button type="button" className="button" onClick={onCancel}>
           {t('app.cancel')}
         </button>
       </div>

@@ -23,6 +23,7 @@ import { MembersPage } from '../core/organizations/MembersPage'
 import { OrgStructurePage } from '../core/organizations/OrgStructurePage'
 import { UsersPage } from '../core/users/UsersPage'
 import { TaskDetailPage } from '../modules/tasks/pages/TaskDetailPage'
+import { TaskCreatePage } from '../modules/tasks/pages/TaskCreatePage'
 import { TaskListPage } from '../modules/tasks/pages/TaskListPage'
 import { savedFiltersNavigatorGroup } from '../modules/tasks/components/SavedFiltersNavigatorGroup'
 import { useOverdueCount } from '../modules/tasks/useOverdueCount'
@@ -66,7 +67,13 @@ export function App() {
                   <Route path="/projects/:projectId" element={<ProjectPage />} />
                   <Route path="/projects/:projectId/tasks" element={<TaskListPage />} />
                   <Route path="/tasks" element={<TaskListPage />} />
+                  {/* Before `/tasks/:taskId`: React Router ranks the static segment
+                      first anyway, and the comment keeps the next reader from
+                      wondering whether the order matters (it is stated here
+                      because it does for other routers). */}
+                  <Route path="/tasks/new" element={<TaskCreatePage />} />
                   <Route path="/tasks/:taskId" element={<TaskDetailPage />} />
+                  <Route path="/projects/:projectId/tasks/new" element={<TaskCreatePage />} />
                   <Route path="/users/me" element={<UserProfilePage />} />
       <Route path="/preferences" element={<PreferencesPage />} />
                   <Route path="/members" element={<MembersPage />} />

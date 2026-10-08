@@ -2,6 +2,7 @@ import { useCallback, useMemo } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 
 import { useAsync, useMutation } from '../../../core/hooks/useAsync'
+import { Icon } from '../../../core/layout/Icon'
 import { useI18n } from '../../../core/i18n'
 import { organizationsApi } from '../../../core/organizations/api'
 import { useOrganizationId } from '../../../core/organizations/OrganizationContext'
@@ -10,10 +11,9 @@ import { useCapabilities } from '../../../core/permissions/capabilities'
 import { projectsApi } from '../../../core/projects/api'
 import type { Project } from '../../../core/projects/api'
 import { tasksApi } from '../api'
-import { TaskCreateForm } from '../components/TaskCreateForm'
 import { TaskFilterBar, filtersFromSearch, filtersToSearch } from '../components/TaskFilterBar'
 import { TaskPagination, TaskTable } from '../components/TaskTable'
-import type { Task, TaskCreate, TaskFilters } from '../types'
+import type { Task, TaskFilters } from '../types'
 
 const PAGE_SIZE = 25
 
@@ -87,14 +87,8 @@ function TaskList() {
     page.reload()
   })
 
-  const createTask = useMutation<TaskCreate, void>(async (input) => {
-    if (projectId) {
-      await tasksApi.create(organizationId, projectId, input)
-    } else {
-      await tasksApi.createUnfiled(organizationId, input)
-    }
-    page.reload()
-  })
+  /** Where "new task" goes: the create page, scoped to this project when there is one. */
+  const createPath = projectId ? `/projects/${projectId}/tasks/new` : '/tasks/new'
 
   const roster = members.data ?? []
 
@@ -116,13 +110,18 @@ function TaskList() {
     <section>
       <header className="page-header">
         <h1>{title}</h1>
-        <TaskCreateForm
-          members={roster}
-          projects={projects.data ?? []}
-          projectId={projectId}
-          disabled={!capabilities.canCreateTask}
-          onCreate={(input) => createTask.runOrThrow(input)}
-        />
+        {/* A link, not a button that unfolds a form in place: the form used to
+            open above this table and push every row down under the cursor. It
+            lives on its own page now, and Cancel there comes straight back with
+            the filters this list is holding. */}
+        {capabilities.canCreateTask ? (
+          <Link className="button button--primary" to={createPath}>
+            <Icon name="plus" size={15} />
+            {t('tasks.newTask')}
+          </Link>
+        ) : (
+          <span className="muted">{t('tasks.cannotCreate')}</span>
+        )}
       </header>
 
       <TaskFilterBar
@@ -137,14 +136,6 @@ function TaskList() {
           {toggleDone.error}
         </p>
       ) : null}
-      {createTask.error ? (
-        <p className="notice notice--error" role="alert">
-          {createTask.error}
-        </p>
-      ) : null}
-      {page.error ? <p className="notice notice--error">{page.error}</p> : null}
-
-      {page.loading && !page.data ? <p className="notice">{t('tasks.loadingTasks')}</p> : null}
 
       {page.data ? (
         <>
