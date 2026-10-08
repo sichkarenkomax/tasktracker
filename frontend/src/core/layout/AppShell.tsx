@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 
 import { useAuth } from '../auth/AuthContext'
+import { Avatar } from '../users/Avatar'
 import { displayName } from '../auth/types'
 import { useAsync } from '../hooks/useAsync'
 import { useI18n, LOCALES } from '../i18n'
@@ -15,6 +16,7 @@ import { Icon } from './Icon'
 import type { IconName } from './Icon'
 import { NavRow } from './NavRow'
 import { navigatorGroupsFor } from './navigator'
+import { useRailBadges } from './railBadges'
 import type { NavigatorSectionId } from './navigator'
 
 /**
@@ -227,6 +229,7 @@ function Rail() {
   const { t } = useI18n()
   const sections = useSections()
   const active = useActiveSection(sections)
+  const badges = useRailBadges()
 
   return (
     <nav className="shell__rail rail" aria-label={t('app.more')}>
@@ -234,18 +237,31 @@ function Rail() {
         TT
       </Link>
 
-      {sections.map((section) => (
-        <Link
-          key={section.id}
-          to={section.path}
-          title={section.label}
-          aria-label={section.label}
-          aria-current={active?.id === section.id ? 'page' : undefined}
-          className={active?.id === section.id ? 'rail__item rail__item--active' : 'rail__item'}
-        >
-          <Icon name={section.icon} size={20} />
-        </Link>
-      ))}
+      {sections.map((section) => {
+        const badge = badges[section.id]
+        const showBadge = badge !== undefined && badge > 0
+        return (
+          <Link
+            key={section.id}
+            to={section.path}
+            title={section.label}
+            aria-label={showBadge ? `${section.label}: ${badge}` : section.label}
+            aria-current={active?.id === section.id ? 'page' : undefined}
+            className="rail__item-wrap"
+          >
+            <span
+              className={active?.id === section.id ? 'rail__item rail__item--active' : 'rail__item'}
+            >
+              <Icon name={section.icon} size={20} />
+            </span>
+            {showBadge ? (
+              <span className="rail__badge" aria-hidden="true">
+                {badge > 99 ? '99+' : badge}
+              </span>
+            ) : null}
+          </Link>
+        )
+      })}
 
       <span className="rail__spacer" />
     </nav>
@@ -584,10 +600,8 @@ function AccountMenu({ onSignOut }: { onSignOut: () => Promise<void> }) {
         aria-expanded={open}
         onClick={() => setOpen((value) => !value)}
       >
-        <span className="account__avatar" aria-hidden="true">
-          {displayName(user).charAt(0).toUpperCase()}
-        </span>
-        <span className="account__name">{displayName(user)}</span>
+<Avatar src={user.avatar_url} name={displayName(user)} size="sm" className="account__avatar" />
+          <span className="account__name">{displayName(user)}</span>
         <Icon name="chevron" size={14} />
       </button>
 

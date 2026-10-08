@@ -1,11 +1,15 @@
+import { useMemo } from 'react'
+import type { ReactNode } from 'react'
 import { BrowserRouter, Outlet, Route, Routes } from 'react-router-dom'
 
 import { AuthProvider } from '../core/auth/AuthContext'
 import { RequireAuth } from '../core/auth/RequireAuth'
+import { DateFormatSync } from '../core/format/DateFormatSync'
 import { I18nProvider } from '../core/i18n'
-import { OrganizationProvider } from '../core/organizations/OrganizationContext'
+import { OrganizationProvider, useOrganization } from '../core/organizations/OrganizationContext'
 import { AppShell } from '../core/layout/AppShell'
 import { registerNavigatorGroup } from '../core/layout/navigator'
+import { RailBadgesProvider } from '../core/layout/railBadges'
 import { LoginPage } from './pages/LoginPage'
 import { NotFoundPage } from './pages/NotFoundPage'
 import { PortalSettingsPage } from './pages/PortalSettingsPage'
@@ -21,6 +25,7 @@ import { UsersPage } from '../core/users/UsersPage'
 import { TaskDetailPage } from '../modules/tasks/pages/TaskDetailPage'
 import { TaskListPage } from '../modules/tasks/pages/TaskListPage'
 import { savedFiltersNavigatorGroup } from '../modules/tasks/components/SavedFiltersNavigatorGroup'
+import { useOverdueCount } from '../modules/tasks/useOverdueCount'
 
 // Navigator submenus are owned by the modules and wired in here, at the one
 // layer allowed to import in both directions (stage 1.9).
@@ -42,8 +47,10 @@ export function App() {
       <BrowserRouter>
         <AuthProvider>
           <OrganizationProvider>
-            <AppShell>
-              <Routes>
+            <DateFormatSync />
+            <RailBadges>
+              <AppShell>
+                <Routes>
                 <Route path="/" element={<WelcomePage />} />
                 <Route path="/login" element={<LoginPage />} />
                 <Route path="/system" element={<SystemPage />} />
@@ -70,10 +77,25 @@ export function App() {
 
                 <Route path="*" element={<NotFoundPage />} />
               </Routes>
-            </AppShell>
+              </AppShell>
+            </RailBadges>
           </OrganizationProvider>
         </AuthProvider>
       </BrowserRouter>
     </I18nProvider>
   )
+}
+
+/**
+ * The numbers the rail paints on its icons.
+ *
+ * The rail is in `core` and the overdue count belongs to the tasks module, so the
+ * app layer is where the two meet: it asks the module, and hands `core` a plain
+ * map. `core` learns nothing about tasks.
+ */
+function RailBadges({ children }: { children: ReactNode }) {
+  const { current } = useOrganization()
+  const overdue = useOverdueCount(current?.id ?? null)
+  const value = useMemo(() => ({ tasks: overdue }), [overdue])
+  return <RailBadgesProvider value={value}>{children}</RailBadgesProvider>
 }
