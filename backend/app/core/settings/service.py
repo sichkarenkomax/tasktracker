@@ -24,6 +24,14 @@ SETTING_DEFINITIONS: dict[str, dict[str, Any]] = {
     "date_format": {"type": "string", "default": "YYYY-MM-DD"},
     "week_starts_on": {"type": "integer", "default": 1},
     "task_auto_archive_days": {"type": "integer", "default": 0},
+    # Files (stage 2.2). Zero means "no limit", which is the only honest default
+    # for a self-hosted portal whose owner knows their own disk: a limit invented
+    # here would be enforced the first time somebody tried to attach a file, and
+    # the person hitting it would not be the person who chose the number. The
+    # settings screen offers both, and per-department and per-person allowances
+    # live in `storage_quotas` rather than here.
+    "max_file_size_bytes": {"type": "integer", "default": 0},
+    "storage_quota_bytes": {"type": "integer", "default": 0},
 }
 
 #: Personal settings, the same contract one level down: a key declared here is a

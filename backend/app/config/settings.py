@@ -76,6 +76,12 @@ class Settings(BaseSettings):
     max_page_size: int = 100
     default_page_size: int = 25
 
+    # --- Files -------------------------------------------------------------
+    #: Where uploaded bytes live in this deployment. A path, because the first
+    #: implementation is a mounted volume; an S3 module replaces it by
+    #: registering its own `FileStorage` (docs/architecture.md, section 43).
+    uploads_dir: Path = Path("/var/lib/tasktracker/uploads")
+
     # --- Deployment shape --------------------------------------------------
     #: One organization per installation. When true only a portal administrator
     #: may set the organization up and a second one is refused outright.
