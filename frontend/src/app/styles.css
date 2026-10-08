@@ -526,6 +526,35 @@ ol {
   color: var(--text);
 }
 
+/* The rail item and its badge are one link, so the badge sits on a wrapper: an
+   absolutely positioned label needs a positioned parent, and the alternative -
+   putting the badge inside the button - would centre it on the icon and cover
+   the glyph it belongs to. */
+.rail__item-wrap {
+  position: relative;
+  display: block;
+  text-decoration: none;
+}
+
+.rail__badge {
+  position: absolute;
+  top: -0.25rem;
+  right: -0.125rem;
+  display: grid;
+  place-items: center;
+  min-width: 1rem;
+  height: 1rem;
+  padding: 0 0.2rem;
+  border-radius: 999px;
+  background: var(--danger);
+  color: #ffffff;
+  font-size: 0.625rem;
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  box-shadow: 0 0 0 2px var(--nav);
+}
+
 .rail__spacer {
   flex: 1;
 }
@@ -1090,6 +1119,61 @@ button.orgbox__title {
   background: var(--nav-hover);
 }
 
+/* The avatar, and the row that uploads one (stage 2.3). */
+.avatar {
+  display: grid;
+  flex: none;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--accent-text);
+  font-weight: 600;
+  /* Always a circle, whatever a replacement image turns out to be. */
+  overflow: hidden;
+}
+
+.avatar--sm {
+  width: 1.5rem;
+  height: 1.5rem;
+  font-size: 0.6875rem;
+}
+
+.avatar--md {
+  width: 2rem;
+  height: 2rem;
+  font-size: 0.8125rem;
+}
+
+.avatar--lg {
+  width: 4rem;
+  height: 4rem;
+  font-size: 1.25rem;
+}
+
+.avatar--image {
+  object-fit: cover;
+  display: block;
+}
+
+.avatar-upload {
+  display: flex;
+  gap: var(--space-4);
+  align-items: center;
+  padding-bottom: var(--space-4);
+}
+
+.avatar-upload__controls {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  align-items: flex-start;
+}
+
+.avatar-upload__controls p {
+  margin: 0;
+  font-size: 0.75rem;
+}
+
 .account__avatar {
   display: grid;
   place-items: center;
@@ -1627,41 +1711,61 @@ textarea {
   cursor: not-allowed;
 }
 
-/* The hour and minute, as two plain boxes. Deliberately not a native time
-   input: its picker is drawn by the browser and ignores the theme, which is the
-   reason this popup exists at all. */
-.datefield__time {
-  display: flex;
-  gap: var(--space-1);
-  align-items: center;
-  justify-content: center;
+/* The clock: hours beside minutes, the shape the native picker had and the one
+   people already read without thinking. Scrolling columns rather than boxes,
+   because a value is picked, not typed - and a picker that has to be typed into
+   is a picker that can hold a nonsense like 99. */
+.datefield__clock {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-3);
   padding-top: var(--space-2);
+  border-top: 1px solid var(--divider);
+  margin-top: var(--space-2);
 }
 
-.datefield__time-field input {
-  width: 3rem;
-  min-height: 2rem;
-  padding: 0 var(--space-2);
+.datefield__clock-head {
+  padding-bottom: var(--space-1);
+  color: var(--text-faint);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-align: center;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.datefield__clock-list {
+  max-height: 7.5rem;
+  overflow-y: auto;
+  padding: var(--space-1);
   border: 1px solid var(--input-border);
   border-radius: var(--radius);
   background: var(--input-bg);
+  scrollbar-width: thin;
+}
+
+.datefield__clock-item {
+  display: block;
+  width: 100%;
+  padding: var(--space-1) 0;
+  border: 0;
+  border-radius: var(--radius);
+  background: none;
   color: var(--text);
   font: inherit;
   text-align: center;
   font-variant-numeric: tabular-nums;
+  cursor: pointer;
 }
 
-.datefield__time-field input:hover:not(:disabled) {
+.datefield__clock-item:hover {
   background: var(--nav-hover);
 }
 
-.datefield__time-field input:disabled {
-  color: var(--text-disabled);
-  cursor: not-allowed;
-}
-
-.datefield__time-sep {
-  color: var(--text-muted);
+.datefield__clock-item--selected,
+.datefield__clock-item--selected:hover {
+  background: var(--calendar);
+  color: var(--calendar-ink);
   font-weight: 600;
 }
 

@@ -107,8 +107,8 @@ export function DateField(props: DateFieldProps) {
 
   const menuId = `datefield-${reactId}`
   const titleId = `${menuId}-title`
-  const hourId = `${menuId}-hour`
-  const minuteId = `${menuId}-minute`
+  const hoursId = `${menuId}-hours`
+  const minutesId = `${menuId}-minutes`
 
   const selected = selectedParts(props)
   const placeholder = props.placeholder ?? t('date.placeholder')
@@ -159,12 +159,6 @@ export function DateField(props: DateFieldProps) {
     props.onChange(toInstant(selected, next))
   }
 
-  function editClock(patch: Partial<Clock>) {
-    const next = { ...clockRef.current, ...patch }
-    clockRef.current = next
-    setClock(next)
-  }
-
   /** A day the caller may not choose: outside `min`/`max`. */
   function isBlocked(parts: DateParts): boolean {
     const iso = isoOf(parts)
@@ -190,6 +184,15 @@ export function DateField(props: DateFieldProps) {
   }
 
   function onKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
+    // The grid answers arrows and PageUp/PageDown. The clock columns answer the
+    // same keys themselves, so a key coming from there belongs to the column it
+    // was pressed in - without this guard, arrow keys inside the hour box moved
+    // the *date* while the hour sat still.
+    const target = event.target as HTMLElement
+    const onGrid = target.classList?.contains('datefield__day') === true
+
+    if (!onGrid && event.key !== 'Escape') return
+
     const here = parseIso(cursor) ?? today()
     switch (event.key) {
       case 'ArrowLeft':
@@ -236,8 +239,10 @@ export function DateField(props: DateFieldProps) {
         close(true)
         break
       case 'Tab':
-        // Let the browser move on: the popup folds, focus stays in the form.
-        setOpen(false)
+        // Tabbing out of the popup folds it, but a Tab *inside* it - from the
+        // hours to the minutes - must not: the reader is on their way to the
+        // control they wanted, not out of the control they opened.
+        if (onGrid) setOpen(false)
         break
       default:
         break
@@ -418,42 +423,26 @@ useLayoutEffect(() => {
           </div>
 
           {withTime ? (
-            /* Two plain number boxes rather than a native time input: a native
-               one opens a browser-drawn wheel that cannot be themed, which is the
-               whole reason this popup exists. They commit on blur so that typing
-               "1" on the way to "18" is not a value on its way to the server. */
-            <div className="datefield__time">
-              <label className="datefield__time-field" htmlFor={hourId}>
-                <span className="visually-hidden">{t('date.hour')}</span>
-                <input
-                  id={hourId}
-                  type="number"
-                  inputMode="numeric"
-                  min={0}
-                  max={23}
-                  value={pad2(clock.h)}
-                  disabled={props.disabled}
-                  onChange={(event) => editClock({ h: clamp(event.target.value, 0, 23) })}
-                  onBlur={() => commitClock(clockRef.current)}
-                />
-              </label>
-              <span className="datefield__time-sep" aria-hidden="true">
-                :
-              </span>
-              <label className="datefield__time-field" htmlFor={minuteId}>
-                <span className="visually-hidden">{t('date.minute')}</span>
-                <input
-                  id={minuteId}
-                  type="number"
-                  inputMode="numeric"
-                  min={0}
-                  max={59}
-                  value={pad2(clock.m)}
-                  disabled={props.disabled}
-                  onChange={(event) => editClock({ m: clamp(event.target.value, 0, 59) })}
-                  onBlur={() => commitClock(clockRef.current)}
-                />
-              </label>
+            /* Two scrolling columns, hours beside minutes - the shape the native
+               picker used and the one people already know. Native controls are
+               ruled out: this picker exists because the browser draws its own and
+               will not be themed, and `input[type=time]` is drawn by the same
+               hand. */
+            <div className="datefield__clock">
+              <ClockColumn
+                id={hoursId}
+                label={t('date.hour')}
+                values={HOURS}
+                selected={clock.h}
+                onPick={(value) => commitClock({ ...clockRef.current, h: value })}
+              />
+              <ClockColumn
+                id={minutesId}
+                label={t('date.minute')}
+                values={minutesFor(clock.m)}
+                selected={clock.m}
+                onPick={(value) => commitClock({ ...clockRef.current, m: value })}
+              />
             </div>
           ) : null}
 
@@ -585,6 +574,101 @@ interface Clock {
   m: number
 }
 
+const HOURS = Array.from({ length: 24 }, (_, hour) => hour)
+
+/**
+ * Minutes on a five-minute grid, the way a clock is read.
+ *
+ * A value already in use that is not on the grid is added rather than rounded:
+ * somebody who set 18:37 and reopens the field should see 37, not have it
+ * quietly become 35 and then be saved as 35.
+ */
+function minutesFor(current: number): number[] {
+  const minutes = Array.from({ length: 12 }, (_, step) => step * 5)
+  if (current % 5 !== 0 && current >= 0 && current <= 59) {
+    minutes.push(current)
+    minutes.sort((a, b) => a - b)
+  }
+  return minutes
+}
+
+/**
+ * One column of the clock: hours beside minutes.
+ *
+ * Roving tabindex inside the column - one stop for the reader, arrows within -
+ * because a column of 24 separate tab stops would bury the calendar underneath.
+ * Arrows move the focus only; a value is committed by a click or by Enter, so
+ * nobody changes an hour by scrolling past it.
+ */
+function ClockColumn({
+  id,
+  label,
+  values,
+  selected,
+  onPick,
+}: {
+  id: string
+  label: string
+  values: number[]
+  selected: number
+  onPick: (value: number) => void
+}) {
+  const listRef = useRef<HTMLDivElement>(null)
+
+  useLayoutEffect(() => {
+    listRef.current?.querySelector('[data-selected="true"]')?.scrollIntoView({ block: 'nearest' })
+  }, [selected])
+
+  return (
+    <div className="datefield__clock-col">
+      <div className="datefield__clock-head" id={id}>
+        {label}
+      </div>
+      <div
+        ref={listRef}
+        className="datefield__clock-list"
+        role="listbox"
+        aria-labelledby={id}
+        onKeyDown={(event) => {
+          const keys = ['ArrowDown', 'ArrowRight', 'ArrowUp', 'ArrowLeft', 'Home', 'End']
+          if (!keys.includes(event.key)) return
+          event.preventDefault()
+          event.stopPropagation()
+          const items = [...(listRef.current?.querySelectorAll('button') ?? [])]
+          const at = items.indexOf(document.activeElement as HTMLButtonElement)
+          const step = event.key === 'ArrowUp' || event.key === 'ArrowLeft' ? -1 : 1
+          const next =
+            event.key === 'Home'
+              ? 0
+              : event.key === 'End'
+                ? items.length - 1
+                : Math.min(items.length - 1, Math.max(0, (at < 0 ? 0 : at) + step))
+          items[next]?.focus()
+        }}
+      >
+        {values.map((value) => (
+          <button
+            key={value}
+            type="button"
+            role="option"
+            aria-selected={value === selected}
+            data-selected={value === selected ? 'true' : undefined}
+            tabIndex={value === selected ? 0 : -1}
+            className={
+              value === selected
+                ? 'datefield__clock-item datefield__clock-item--selected'
+                : 'datefield__clock-item'
+            }
+            onClick={() => onPick(value)}
+          >
+            {pad2(value)}
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 /**
  * The day the value points at, whether it is a bare date or an instant.
  *
@@ -629,12 +713,6 @@ function toInstant(parts: DateParts, clock: Clock): string {
 
 function pad2(value: number): string {
   return String(value).padStart(2, '0')
-}
-
-function clamp(raw: string, min: number, max: number): number {
-  const value = Number(raw)
-  if (!Number.isFinite(value)) return min
-  return Math.min(max, Math.max(min, Math.round(value)))
 }
 
 function isoOf(parts: DateParts): string {
