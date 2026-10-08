@@ -387,6 +387,12 @@ export const en = {
   'date.hour': 'Hour',
   'date.minute': 'Minute',
 
+  // --- preferences -----------------------------------------------------
+  'preferences.title': 'Personal settings',
+  'preferences.subtitle': 'How this portal reads and looks for you.',
+  'preferences.account': 'Account',
+  'preferences.accountHint': 'Name, email, password and session live in the profile.',
+
   // --- errors -----------------------------------------------------------
   'error.generic': 'Something went wrong.',
   'error.network': 'Cannot reach the server.',

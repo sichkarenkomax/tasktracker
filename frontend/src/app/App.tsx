@@ -9,6 +9,7 @@ import { registerNavigatorGroup } from '../core/layout/navigator'
 import { LoginPage } from './pages/LoginPage'
 import { NotFoundPage } from './pages/NotFoundPage'
 import { PortalSettingsPage } from './pages/PortalSettingsPage'
+import { PreferencesPage } from './pages/PreferencesPage'
 import { ProjectPage } from './pages/ProjectPage'
 import { ProjectsPage } from './pages/ProjectsPage'
 import { SystemPage } from './pages/SystemPage'
@@ -60,6 +61,7 @@ export function App() {
                   <Route path="/tasks" element={<TaskListPage />} />
                   <Route path="/tasks/:taskId" element={<TaskDetailPage />} />
                   <Route path="/users/me" element={<UserProfilePage />} />
+      <Route path="/preferences" element={<PreferencesPage />} />
                   <Route path="/members" element={<MembersPage />} />
                   <Route path="/structure" element={<OrgStructurePage />} />
                   <Route path="/users" element={<UsersPage />} />

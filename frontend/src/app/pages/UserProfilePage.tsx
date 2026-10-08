@@ -6,21 +6,20 @@ import { useAuth } from '../../core/auth/AuthContext'
 import { displayName } from '../../core/auth/types'
 import { formatDateTime } from '../../core/format'
 import { useMutation } from '../../core/hooks/useAsync'
-import { useI18n, LOCALES } from '../../core/i18n'
-import type { Locale } from '../../core/i18n'
-import { getTheme, setTheme } from '../../core/theme/theme'
-import type { Theme } from '../../core/theme/theme'
-import { Listbox } from '../../core/ui/Listbox'
+import { useI18n } from '../../core/i18n'
 
 /**
- * The signed-in person's own settings.
+ * The signed-in person's own account.
  *
  * Reached by clicking their name in the header, not from "portal settings": a
  * password is not a property of the installation, and a person looking for it
  * under an administrator's menu item has to be told they are in the wrong place.
+ *
+ * Preferences (language, theme) live on their own screen, `/preferences` - see
+ * `PreferencesPage` for why the two were separated.
  */
 export function UserProfilePage() {
-  const { t, locale, setLocale } = useI18n()
+  const { t } = useI18n()
   const { user, signOut } = useAuth()
   const navigate = useNavigate()
   const [names, setNames] = useState({
@@ -29,7 +28,6 @@ export function UserProfilePage() {
   })
   const [passwords, setPasswords] = useState({ current: '', next: '' })
   const [passwordDone, setPasswordDone] = useState(false)
-  const [theme, chooseTheme] = useState<Theme>(getTheme)
   const [error, setError] = useState<string | null>(null)
 
   const saveProfile = useMutation<{ first_name: string; last_name: string }, void>(
@@ -120,39 +118,6 @@ export function UserProfilePage() {
             </>
           ) : null}
         </dl>
-      </section>
-
-      <section className="panel">
-        <h2>{t('app.language')}</h2>
-        <label className="field">
-          <span className="visually-hidden">{t('app.language')}</span>
-          <Listbox<Locale>
-            value={locale}
-            options={LOCALES.map((entry) => ({ value: entry.id, label: entry.label }))}
-            onChange={(next) => {
-              if (next !== null) setLocale(next)
-            }}
-          />
-        </label>
-      </section>
-
-      <section className="panel">
-        <h2>{t('settings.theme')}</h2>
-        <label className="field">
-          <span className="visually-hidden">{t('settings.theme')}</span>
-          <Listbox<Theme>
-            value={theme}
-            options={[
-              { value: 'gold', label: t('settings.themeGold') },
-              { value: 'blue', label: t('settings.themeBlue') },
-            ]}
-            onChange={(next) => {
-              if (next === null) return
-              chooseTheme(next)
-              setTheme(next)
-            }}
-          />
-        </label>
       </section>
 
       <section className="panel">

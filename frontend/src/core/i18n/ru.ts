@@ -383,6 +383,12 @@ export const ru: Record<TranslationKey, string> = {
   'date.hour': 'Час',
   'date.minute': 'Минута',
 
+  // --- preferences -----------------------------------------------------
+  'preferences.title': 'Персональные настройки',
+  'preferences.subtitle': 'Как этот портал выглядит и на каком языке читается.',
+  'preferences.account': 'Аккаунт',
+  'preferences.accountHint': 'Имя, почта, пароль и сессия — в профиле.',
+
   // --- errors -----------------------------------------------------------
   'error.generic': 'Что-то пошло не так.',
   'error.network': 'Не удаётся связаться с сервером.',

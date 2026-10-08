@@ -192,7 +192,7 @@ function useSections(): Section[] {
       id: 'settings',
       // `/users/me` is the account's own profile - the longest matching prefix
       // keeps it in Settings even though it lives under `/users`.
-      prefixes: ['/settings', '/users/me'],
+      prefixes: ['/settings', '/users/me', '/preferences'],
       path: '/settings',
       icon: 'settings',
       label: t('nav.settings'),
@@ -495,6 +495,14 @@ function SettingsNavigator({
         </li>
         <li>
           <NavRow to="/users/me" icon="user" label={t('nav.profile')} onNavigate={onNavigate} />
+        </li>
+        <li>
+          <NavRow
+            to="/preferences"
+            icon="columns"
+            label={t('preferences.title')}
+            onNavigate={onNavigate}
+          />
         </li>
       </ul>
     </nav>
