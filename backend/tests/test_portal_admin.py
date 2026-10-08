@@ -2,9 +2,10 @@
 
 `is_superuser` is the one permission in the product that is not scoped to an
 organization: it crosses tenants. It therefore lives on a column with its own
-guard rather than among the four organization roles, and these tests pin both
-halves of that decision - who is refused, and what an administrator can then see
-that nobody else can.
+guard rather than among the four organization roles. These tests pin the two
+halves of that decision - who may *grant* the right (only somebody already
+holding it), and what an administrator can do with it that nobody else can.
+The directory itself is open to every signed-in account.
 """
 
 from __future__ import annotations
@@ -31,12 +32,18 @@ async def _make_admin(user_id: str) -> None:
 
 
 class TestUserDirectory:
-    async def test_a_plain_account_is_refused(
+    async def test_a_plain_account_lists_the_directory(
         self, client: AsyncClient, owner: dict[str, Any]
     ) -> None:
+        """The directory is open to every signed-in account; what stays guarded
+        is granting rights, not looking at the list."""
+        stranger = await register_user(client, prefix="stranger")
+
         response = await client.get("/api/v1/users", headers=auth_headers(owner["token"]))
 
-        assert response.status_code == 403
+        assert response.status_code == 200
+        emails = {item["email"] for item in response.json()["items"]}
+        assert stranger["user"]["email"] in emails
 
     async def test_an_administrator_lists_every_account(
         self, client: AsyncClient, owner: dict[str, Any]
@@ -103,9 +110,10 @@ class TestGranting:
         assert response.status_code == 200, response.text
         assert response.json()["is_superuser"] is True
 
-        # And the promotion actually opens the directory for them.
-        listed = await client.get("/api/v1/users", headers=auth_headers(target["access_token"]))
-        assert listed.status_code == 200
+        # And the promotion registers in their profile.
+        profile = await client.get("/api/v1/users/me", headers=auth_headers(target["access_token"]))
+        assert profile.status_code == 200
+        assert profile.json()["is_superuser"] is True
 
     async def test_the_right_is_revoked_again(
         self, client: AsyncClient, owner: dict[str, Any]
@@ -126,7 +134,12 @@ class TestGranting:
 
         assert response.status_code == 200
         assert response.json()["is_superuser"] is False
-        refused = await client.get("/api/v1/users", headers=auth_headers(target["access_token"]))
+        # Revoking closes the one thing the right protected: granting it again.
+        refused = await client.patch(
+            f"/api/v1/users/{owner['user']['id']}/superuser",
+            json={"is_superuser": True},
+            headers=auth_headers(target["access_token"]),
+        )
         assert refused.status_code == 403
 
     async def test_nobody_can_grant_the_right_without_it(

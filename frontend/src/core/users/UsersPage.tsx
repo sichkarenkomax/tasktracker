@@ -11,12 +11,10 @@ import type { PortalUser } from './api'
  * Every account registered on this installation.
  *
  * A different screen from an organization's members, not a wider version of it:
- * this one crosses tenants, so it is only reachable for a portal administrator,
- * and the server refuses it for anybody else regardless of what the menu shows.
- *
- * Granting administrator rights is here rather than in settings because it is the
- * only action in the product that is not scoped to one organization - it is the
- * reason the guard on this screen is `is_superuser` rather than a role.
+ * this one crosses tenants, so browsing it is open to everybody who can sign in.
+ * Granting administrator rights is the exception - it is the only action in the
+ * product that is not scoped to one organization, so it stays superuser-only,
+ * and the server refuses it for anybody else exactly as it always did.
  */
 export function UsersPage() {
   const { t } = useI18n()
@@ -37,16 +35,7 @@ export function UsersPage() {
 
   const page = useAsync(() => usersApi.list({ search, limit: 50, offset }), [search, offset])
 
-  if (!user?.is_superuser) {
-    return (
-      <section>
-        <h1>{t('users.title')}</h1>
-        <p className="notice notice--error" role="alert">
-          {t('error.permissionDenied')}
-        </p>
-      </section>
-    )
-  }
+  const canAdmin = !!user?.is_superuser
 
   return (
     <section>
@@ -104,7 +93,8 @@ export function UsersPage() {
                   <UserRow
                     key={account.id}
                     account={account}
-                    isMe={account.id === user.id}
+                    isMe={account.id === user?.id}
+                    canAdmin={canAdmin}
                     onChanged={page.reload}
                   />
                 ))}
@@ -163,10 +153,12 @@ function Pagination({
 function UserRow({
   account,
   isMe,
+  canAdmin,
   onChanged,
 }: {
   account: PortalUser
   isMe: boolean
+  canAdmin: boolean
   onChanged: () => void
 }) {
   const { t } = useI18n()
@@ -200,7 +192,7 @@ function UserRow({
           // The server refuses this anyway; offering it would be a button that
           // exists only to fail.
           <span className="muted" />
-        ) : (
+        ) : canAdmin ? (
           <button
             type="button"
             className="link"
@@ -214,7 +206,7 @@ function UserRow({
           >
             {account.is_superuser ? t('users.removeAdmin') : t('users.makeAdmin')}
           </button>
-        )}
+        ) : null}
         {error ? (
           <span className="field__error" role="alert">
             {error}

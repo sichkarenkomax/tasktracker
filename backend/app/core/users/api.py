@@ -1,4 +1,4 @@
-"""Users API: self-service profile, tenant-scoped lookups, portal administration.
+"""Users API: self-service profile, tenant-scoped lookups, portal directory.
 
 Three different audiences share this module, and the difference is only the guard:
 
@@ -6,14 +6,11 @@ Three different audiences share this module, and the difference is only the guar
   a session.
 * ``/users/{user_id}`` - a member of an organization, about a colleague. Guarded
   by that organization's ``user.view`` permission.
-* ``/users`` and ``/users/{user_id}/superuser`` - the portal administrator, over
-  every account on the installation. Guarded by ``is_superuser``.
-
-The global list is deliberately absent from the first two: browsing people happens
-through ``GET /organizations/{organization_id}/members``, which is already scoped
-by the authorization check (docs/architecture.md, section 10). A self-hosted
-platform with one installation has no reason to expose a cross-tenant directory
-to everybody who can sign in.
+* ``/users`` - the portal directory, open to any signed-in account: on a
+  self-hosted installation every tenant is the same deployment, and browsing who
+  is registered is a normal lookup. Only ``/users/{user_id}/superuser`` stays
+  superuser-only - granting rights over every tenant is a portal action, unlike
+  looking at the list.
 """
 
 from __future__ import annotations
@@ -71,7 +68,7 @@ class SuperuserUpdate(BaseModel):
 
 
 def _require_superuser(user: CurrentUser) -> None:
-    """The one guard on the portal-wide routes.
+    """The guard on the one route that changes rights over every tenant.
 
     ``is_superuser`` is a column rather than an organization role on purpose: an
     administrator of the installation is a different thing from an administrator
@@ -104,14 +101,13 @@ async def update_me(
     return UserProfile.model_validate(user)
 
 
-@router.get("", response_model=AdminUserPage, summary="Every account (portal administrator)")
+@router.get("", response_model=AdminUserPage, summary="Every account on the installation")
 async def list_users(
     user: CurrentUser,
     session: SessionDep,
     page: PageDep,
     search: str | None = Query(default=None, max_length=200),
 ) -> AdminUserPage:
-    _require_superuser(user)
     repository = UserRepository(session)
     accounts = await repository.search(term=search, limit=page.limit, offset=page.offset)
     return AdminUserPage(
