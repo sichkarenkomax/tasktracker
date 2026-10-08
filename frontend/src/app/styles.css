@@ -1145,9 +1145,12 @@ button.orgbox__title {
 }
 
 .avatar--lg {
-  width: 4rem;
-  height: 4rem;
-  font-size: 1.25rem;
+  /* The profile's picture, not a list avatar: big enough to be recognisable
+     across a room, which is the whole point of putting a face on a person. The
+     header keeps `sm`. */
+  width: 6rem;
+  height: 6rem;
+  font-size: 2rem;
 }
 
 .avatar--image {
@@ -1997,6 +2000,35 @@ textarea {
   font-size: 1rem;
 }
 
+/* The create page: the form's own column, with the title field given the width a
+   title deserves. It is no longer squeezed into a list's header, so the grid is
+   allowed to be as wide as the page is. */
+.create-form--page {
+  display: grid;
+  gap: var(--space-4);
+  margin-top: var(--space-4);
+}
+
+.create-form--page .create-form__grid {
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: var(--space-3) var(--space-4);
+}
+
+.create-form--page .create-form__title,
+.create-form--page .create-form__description {
+  grid-column: 1 / -1;
+}
+
+.create-form--page .create-form__description {
+  min-height: 7rem;
+}
+
+/* The chevron of the "back to the list" control points back, so it is turned
+   round; the shared icon points down. */
+.back-chevron {
+  transform: rotate(90deg);
+}
+
 .create-form__description {
   min-height: 5rem;
 }
@@ -2455,8 +2487,10 @@ textarea {
   border-radius: var(--radius-md);
 }
 
-.member__avatar,
-.avatar {
+/* The member row's picture in the staff list. The reusable `Avatar` component has
+   its own rules above; naming `.avatar` here as well used to win by being later in
+   the file and silently shrank every avatar to this size. */
+.member__avatar {
   display: grid;
   place-items: center;
   width: 1.75rem;
