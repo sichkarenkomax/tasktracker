@@ -5,6 +5,7 @@ import { useMutation } from '../../../core/hooks/useAsync'
 import { Icon } from '../../../core/layout/Icon'
 import type { Member } from '../../../core/organizations/api'
 import type { Project } from '../../../core/projects/api'
+import { DateField } from '../../../core/ui/DateField'
 import { Listbox } from '../../../core/ui/Listbox'
 import { useTaskVocabulary } from './Badges'
 import type { TaskCreate, TaskPriority } from '../types'
@@ -149,10 +150,9 @@ export function TaskCreateForm({
 
         <label>
           <span>{t('tasks.dueDate')}</span>
-          <input
-            type="date"
-            value={dueDate}
-            onChange={(event) => setDueDate(event.target.value)}
+          <DateField
+            value={dueDate === '' ? null : dueDate}
+            onChange={(next) => setDueDate(next ?? '')}
           />
         </label>
 

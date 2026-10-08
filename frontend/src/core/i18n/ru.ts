@@ -372,6 +372,15 @@ export const ru: Record<TranslationKey, string> = {
   'users.memberOf': 'Состоит в',
   'users.noOrganizations': 'Нет организаций',
 
+  // --- date field --------------------------------------------------------
+  'date.calendar': 'Календарь',
+  'date.open': 'Открыть календарь',
+  'date.placeholder': 'Не выбрано',
+  'date.today': 'Сегодня',
+  'date.clear': 'Очистить',
+  'date.prevMonth': 'Предыдущий месяц',
+  'date.nextMonth': 'Следующий месяц',
+
   // --- errors -----------------------------------------------------------
   'error.generic': 'Что-то пошло не так.',
   'error.network': 'Не удаётся связаться с сервером.',

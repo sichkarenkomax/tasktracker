@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 
+import { DateField } from '../../../core/ui/DateField'
 import { Listbox } from '../../../core/ui/Listbox'
 
 /**
@@ -88,9 +89,11 @@ export function TaskFieldSelect<T extends string>({
 /**
  * The deadline field.
  *
- * A plain date input rather than a datetime picker: a deadline has no time of
- * day, and offering a time component invites people to believe in a precision the
- * data model does not have.
+ * A date with no time of day - a deadline has none, and offering a time
+ * component invites people to believe in a precision the data model does not
+ * have. The control is our own calendar rather than `<input type="date">`:
+ * the browser draws its own popup and will not colour the day it highlights
+ * (see `core/ui/DateField`).
  */
 export function TaskDateField({
   label,
@@ -132,11 +135,11 @@ export function TaskDateField({
   return (
     <label className="field">
       <span>{label}</span>
-      <input
-        type="date"
-        value={draft}
+      <DateField
+        value={draft === '' ? null : draft}
         disabled={disabled || pending}
-        onChange={(event) => void commit(event.target.value)}
+        invalid={error !== null}
+        onChange={(next) => void commit(next ?? '')}
       />
       {error ? (
         <span className="field__error" role="alert">

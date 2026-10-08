@@ -376,6 +376,15 @@ export const en = {
   'users.memberOf': 'Member of',
   'users.noOrganizations': 'No organizations',
 
+  // --- date field --------------------------------------------------------
+  'date.calendar': 'Calendar',
+  'date.open': 'Open calendar',
+  'date.placeholder': 'Not set',
+  'date.today': 'Today',
+  'date.clear': 'Clear',
+  'date.prevMonth': 'Previous month',
+  'date.nextMonth': 'Next month',
+
   // --- errors -----------------------------------------------------------
   'error.generic': 'Something went wrong.',
   'error.network': 'Cannot reach the server.',
