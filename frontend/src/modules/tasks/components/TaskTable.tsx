@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 
-import { daysUntil, formatDateTime, plural } from '../../../core/format'
+import { formatDateTime, isOverdue, plural } from '../../../core/format'
 import { useI18n } from '../../../core/i18n'
 import { Icon } from '../../../core/layout/Icon'
 import type { Member } from '../../../core/organizations/api'
@@ -61,7 +61,7 @@ export function TaskTable({
   }
 
   function cell(task: Task, column: ColumnId): React.ReactNode {
-    const overdue = !isDone(task.status) && (daysUntil(task.due_date) ?? 1) < 0
+    const overdue = !isDone(task.status) && isOverdue(task.due_date)
 
     switch (column) {
       case 'title':
@@ -137,7 +137,7 @@ export function TaskTable({
           </thead>
           <tbody>
             {tasks.map((task) => {
-              const overdue = !isDone(task.status) && (daysUntil(task.due_date) ?? 1) < 0
+              const overdue = !isDone(task.status) && isOverdue(task.due_date)
               return (
                 <tr key={task.id} className={overdue ? 'table__row--overdue' : undefined}>
                   <td className="table__check">

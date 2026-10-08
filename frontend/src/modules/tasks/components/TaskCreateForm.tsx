@@ -151,6 +151,8 @@ export function TaskCreateForm({
         <label>
           <span>{t('tasks.dueDate')}</span>
           <DateField
+            withTime
+            timeDefault="end-of-day"
             value={dueDate === '' ? null : dueDate}
             onChange={(next) => setDueDate(next ?? '')}
           />

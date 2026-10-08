@@ -1,6 +1,6 @@
 import { useI18n } from '../../../core/i18n'
 import type { Translate, TranslationKey } from '../../../core/i18n'
-import { describeDueDate } from '../../../core/format'
+import { describeDueDate, formatDeadline } from '../../../core/format'
 import { TASK_PRIORITIES, TASK_STATUSES } from '../types'
 import type { TaskPriority, TaskStatus } from '../types'
 
@@ -60,13 +60,13 @@ export function DueDateBadge({
   value: string | null
   isOverdue: boolean
 }) {
-  const { t } = useI18n()
+  const { locale, t } = useI18n()
   if (!value) return <span className="muted">{t('due.none')}</span>
 
   const relative = describeDueDate(value, t)
   return (
     <span className={isOverdue ? 'badge badge--overdue' : undefined}>
-      {value}
+      {formatDeadline(value, locale)}
       {relative ? <span className="badge__hint"> ({relative})</span> : null}
     </span>
   )

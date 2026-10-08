@@ -380,6 +380,8 @@ export const ru: Record<TranslationKey, string> = {
   'date.clear': 'Очистить',
   'date.prevMonth': 'Предыдущий месяц',
   'date.nextMonth': 'Следующий месяц',
+  'date.hour': 'Час',
+  'date.minute': 'Минута',
 
   // --- errors -----------------------------------------------------------
   'error.generic': 'Что-то пошло не так.',

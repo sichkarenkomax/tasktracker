@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 
 import { useI18n } from '../../../core/i18n'
 import { Icon } from '../../../core/layout/Icon'
+import { DateField } from '../../../core/ui/DateField'
 import { Listbox } from '../../../core/ui/Listbox'
 import { DURATION_UNITS } from '../types'
 import type { DurationUnit } from '../types'
@@ -38,17 +39,17 @@ export function PlanningFields({
   }) => Promise<void>
 }) {
   const { t } = useI18n()
-  // `datetime-local` wants `YYYY-MM-DDTHH:mm` with no zone; the API wants an
-  // instant. Converting between the two here is what keeps the server from having
-  // to guess which of the two it was handed.
-  const [draftStart, setDraftStart] = useState(toLocalInput(start))
+  // The planned start is an instant, and it is kept as one all the way to the API:
+  // `datetime-local` used to hold a wall-clock string that had to be re-anchored
+  // on the way in and out, which is how a plan set at 09:00 came back as 06:00.
+  const [draftStart, setDraftStart] = useState(start ?? '')
   const [draftDuration, setDraftDuration] = useState(duration === null ? '' : String(duration))
   const [draftUnit, setDraftUnit] = useState<DurationUnit>(unit)
   const [error, setError] = useState<string | null>(null)
   const [pending, setPending] = useState(false)
 
   useEffect(() => {
-    setDraftStart(toLocalInput(start))
+    setDraftStart(start ?? '')
     setDraftDuration(duration === null ? '' : String(duration))
     setDraftUnit(unit)
   }, [start, duration, unit])
@@ -62,7 +63,7 @@ export function PlanningFields({
       await onCommit({
         // Empty means "no plan": an explicit null, which is the only way to clear a
         // nullable field. An untouched box must not be read as a change.
-        planned_start: draftStart === '' ? null : new Date(draftStart).toISOString(),
+        planned_start: draftStart === '' ? null : draftStart,
         planned_duration: draftDuration === '' ? null : Number(draftDuration),
         duration_unit: draftUnit,
       })
@@ -77,11 +78,14 @@ export function PlanningFields({
     <div className="planning">
       <label className="field">
         <span>{t('tasks.plannedStart')}</span>
-        <input
-          type="datetime-local"
-          value={draftStart}
+        <DateField
+          withTime
+          // A planned start is written down from this moment, so "now" is its
+          // natural default; a deadline's is the end of the chosen day.
+          timeDefault="now"
+          value={draftStart === '' ? null : draftStart}
           disabled={disabled || pending}
-          onChange={(event) => setDraftStart(event.target.value)}
+          onChange={(next) => setDraftStart(next ?? '')}
         />
       </label>
 
@@ -138,24 +142,6 @@ export function PlanningFields({
 }
 
 const EMPTY_END = '—'
-
-/**
- * An instant as `datetime-local` wants it: local wall-clock, no zone suffix.
- *
- * `toISOString()` would append a `Z` and shift the field by the offset, so a plan
- * set at 09:00 would come back as 06:00 for somebody east of Greenwich - an
- * invisible bug that only shows up in a country other than the author's.
- */
-function toLocalInput(value: string | null): string {
-  if (!value) return ''
-  const parsed = new Date(value)
-  if (Number.isNaN(parsed.getTime())) return ''
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return (
-    `${parsed.getFullYear()}-${pad(parsed.getMonth() + 1)}-${pad(parsed.getDate())}` +
-    `T${pad(parsed.getHours())}:${pad(parsed.getMinutes())}`
-  )
-}
 
 /**
  * A local copy of the server's duration arithmetic, for the preview only.

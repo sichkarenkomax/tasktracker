@@ -384,6 +384,8 @@ export const en = {
   'date.clear': 'Clear',
   'date.prevMonth': 'Previous month',
   'date.nextMonth': 'Next month',
+  'date.hour': 'Hour',
+  'date.minute': 'Minute',
 
   // --- errors -----------------------------------------------------------
   'error.generic': 'Something went wrong.',

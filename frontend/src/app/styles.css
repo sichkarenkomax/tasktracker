@@ -1627,6 +1627,44 @@ textarea {
   cursor: not-allowed;
 }
 
+/* The hour and minute, as two plain boxes. Deliberately not a native time
+   input: its picker is drawn by the browser and ignores the theme, which is the
+   reason this popup exists at all. */
+.datefield__time {
+  display: flex;
+  gap: var(--space-1);
+  align-items: center;
+  justify-content: center;
+  padding-top: var(--space-2);
+}
+
+.datefield__time-field input {
+  width: 3rem;
+  min-height: 2rem;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--input-border);
+  border-radius: var(--radius);
+  background: var(--input-bg);
+  color: var(--text);
+  font: inherit;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.datefield__time-field input:hover:not(:disabled) {
+  background: var(--nav-hover);
+}
+
+.datefield__time-field input:disabled {
+  color: var(--text-disabled);
+  cursor: not-allowed;
+}
+
+.datefield__time-sep {
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
 .datefield__foot {
   display: flex;
   gap: var(--space-3);

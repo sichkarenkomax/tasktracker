@@ -28,9 +28,28 @@ import { Icon } from '../layout/Icon'
  */
 
 export interface DateFieldProps {
-  /** `YYYY-MM-DD`, or null/'' for "not set". */
+  /**
+   * `YYYY-MM-DD` when the field is date-only, or a full instant
+   * (`2026-10-08T15:00:00Z`) when `withTime` is set. null/'' means "not set".
+   */
   value: string | null
   onChange: (next: string | null) => void
+
+  /**
+   * Adds an hour and minute to the popup, and makes the value an instant.
+   *
+   * A deadline that can be 18:00 is an instant, and the API stores one (the
+   * column grew from `date` to `timestamptz`), so the two modes cannot share a
+   * value shape: with time, picking a day means "that day at the shown time".
+   */
+  withTime?: boolean
+
+  /**
+   * The time a day pick starts from when nothing is set yet. "end-of-day" suits a
+   * deadline - choosing a day means "by the end of it" - and "now" suits a planned
+   * start, which is being written down from this moment.
+   */
+  timeDefault?: 'end-of-day' | 'now'
 
   placeholder?: string
   disabled?: boolean
@@ -68,10 +87,17 @@ const DAYS_IN_WEEK = 7
 
 export function DateField(props: DateFieldProps) {
   const { locale, t } = useI18n()
+  const withTime = props.withTime === true
   const [open, setOpen] = useState(false)
-  const [view, setView] = useState<DateParts>(() => startOfMonth(parseIso(props.value) ?? today()))
-  const [cursor, setCursor] = useState<string>(() => isoOf(parseIso(props.value) ?? today()))
+  const [view, setView] = useState<DateParts>(() => startOfMonth(selectedParts(props) ?? today()))
+  const [cursor, setCursor] = useState<string>(() => isoOf(selectedParts(props) ?? today()))
   const [position, setPosition] = useState<MenuPosition | null>(null)
+// The clock is held apart from the value so that typing "1" on the way to "18"
+// does not store 01:00 and ask the server to save it. The ref mirrors it because
+// `blur` can arrive in the same tick as the last keystroke, before React has
+// re-rendered - reading the state there would save the previous hour.
+  const [clock, setClock] = useState<Clock>(() => clockOf(props))
+  const clockRef = useRef(clock)
 
   const triggerRef = useRef<HTMLButtonElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -81,8 +107,10 @@ export function DateField(props: DateFieldProps) {
 
   const menuId = `datefield-${reactId}`
   const titleId = `${menuId}-title`
+  const hourId = `${menuId}-hour`
+  const minuteId = `${menuId}-minute`
 
-  const selected = parseIso(props.value)
+  const selected = selectedParts(props)
   const placeholder = props.placeholder ?? t('date.placeholder')
   const openable = !props.disabled
 
@@ -94,12 +122,19 @@ export function DateField(props: DateFieldProps) {
     () => new Intl.DateTimeFormat(locale, { month: 'long', year: 'numeric' }).format(new Date(view.y, view.m, 1)),
     [locale, view.y, view.m],
   )
-  const triggerText = selected ? formatDate(selected, locale) : placeholder
+  const triggerText = selected
+    ? withTime
+      ? `${formatDate(selected, locale)}, ${pad2(clock.h)}:${pad2(clock.m)}`
+      : formatDate(selected, locale)
+    : placeholder
 
   function show() {
     const from = selected ?? today()
     setView(startOfMonth(from))
     setCursor(isoOf(from))
+    // Re-read the clock from the value: it may have been edited and saved while
+    // the popup was shut.
+    setClock(clockOf(props))
     setOpen(true)
   }
 
@@ -112,8 +147,22 @@ export function DateField(props: DateFieldProps) {
   }
 
   function pick(parts: DateParts) {
-    props.onChange(isoOf(parts))
+    props.onChange(withTime ? toInstant(parts, clockRef.current) : isoOf(parts))
     close(true)
+  }
+
+  /** The clock edits only become a value once the reader leaves the box. */
+  function commitClock(next: Clock) {
+    clockRef.current = next
+    setClock(next)
+    if (!selected) return
+    props.onChange(toInstant(selected, next))
+  }
+
+  function editClock(patch: Partial<Clock>) {
+    const next = { ...clockRef.current, ...patch }
+    clockRef.current = next
+    setClock(next)
   }
 
   /** A day the caller may not choose: outside `min`/`max`. */
@@ -368,6 +417,46 @@ useLayoutEffect(() => {
             ))}
           </div>
 
+          {withTime ? (
+            /* Two plain number boxes rather than a native time input: a native
+               one opens a browser-drawn wheel that cannot be themed, which is the
+               whole reason this popup exists. They commit on blur so that typing
+               "1" on the way to "18" is not a value on its way to the server. */
+            <div className="datefield__time">
+              <label className="datefield__time-field" htmlFor={hourId}>
+                <span className="visually-hidden">{t('date.hour')}</span>
+                <input
+                  id={hourId}
+                  type="number"
+                  inputMode="numeric"
+                  min={0}
+                  max={23}
+                  value={pad2(clock.h)}
+                  disabled={props.disabled}
+                  onChange={(event) => editClock({ h: clamp(event.target.value, 0, 23) })}
+                  onBlur={() => commitClock(clockRef.current)}
+                />
+              </label>
+              <span className="datefield__time-sep" aria-hidden="true">
+                :
+              </span>
+              <label className="datefield__time-field" htmlFor={minuteId}>
+                <span className="visually-hidden">{t('date.minute')}</span>
+                <input
+                  id={minuteId}
+                  type="number"
+                  inputMode="numeric"
+                  min={0}
+                  max={59}
+                  value={pad2(clock.m)}
+                  disabled={props.disabled}
+                  onChange={(event) => editClock({ m: clamp(event.target.value, 0, 59) })}
+                  onBlur={() => commitClock(clockRef.current)}
+                />
+              </label>
+            </div>
+          ) : null}
+
           <div className="datefield__foot">
             <button
               type="button"
@@ -489,6 +578,63 @@ function formatDate(parts: DateParts, locale: string): string {
     month: 'short',
     year: 'numeric',
   }).format(new Date(parts.y, parts.m, parts.d))
+}
+
+interface Clock {
+  h: number
+  m: number
+}
+
+/**
+ * The day the value points at, whether it is a bare date or an instant.
+ *
+ * An instant is read in the reader's own zone on purpose: a deadline stored as
+ * `2026-10-08T22:00:00Z` is the 8th at 18:00 in UTC+3, and showing it as the 8th
+ * is what the person who set it meant.
+ */
+function selectedParts(props: DateFieldProps): DateParts | null {
+  if (!props.value) return null
+  if (props.withTime === true) {
+    const parsed = new Date(props.value)
+    if (Number.isNaN(parsed.getTime())) return null
+    return { y: parsed.getFullYear(), m: parsed.getMonth(), d: parsed.getDate() }
+  }
+  return parseIso(props.value)
+}
+
+/** The clock the popup opens with: the value's own, or the caller's default. */
+function clockOf(props: DateFieldProps): Clock {
+  if (props.withTime === true && props.value) {
+    const parsed = new Date(props.value)
+    if (!Number.isNaN(parsed.getTime())) return { h: parsed.getHours(), m: parsed.getMinutes() }
+  }
+  return props.timeDefault === 'now'
+    ? (() => {
+        const now = new Date()
+        return { h: now.getHours(), m: now.getMinutes() }
+      })()
+    : { h: 23, m: 59 }
+}
+
+/**
+ * A day and a clock as the UTC instant the API stores.
+ *
+ * The wall-clock reading is converted rather than appended: `Date.UTC` would read
+ * the numbers as UTC and shift the value by this machine's offset, which is the
+ * bug that turns 18:00 into 06:00 either side of Greenwich.
+ */
+function toInstant(parts: DateParts, clock: Clock): string {
+  return new Date(parts.y, parts.m, parts.d, clock.h, clock.m, 0, 0).toISOString()
+}
+
+function pad2(value: number): string {
+  return String(value).padStart(2, '0')
+}
+
+function clamp(raw: string, min: number, max: number): number {
+  const value = Number(raw)
+  if (!Number.isFinite(value)) return min
+  return Math.min(max, Math.max(min, Math.round(value)))
 }
 
 function isoOf(parts: DateParts): string {

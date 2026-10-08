@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 
-import { daysUntil, formatDateTime } from '../../../core/format'
+import { formatDateTime, formatDeadline, isOverdue } from '../../../core/format'
 import { useAsync, useMutation } from '../../../core/hooks/useAsync'
 import { useI18n } from '../../../core/i18n'
 import { Icon } from '../../../core/layout/Icon'
@@ -187,7 +187,7 @@ function TaskDetail() {
   if (!task.data) return <p className="notice">{t('app.loading')}</p>
 
   const current = task.data
-  const overdue = !isDone(current.status) && (daysUntil(current.due_date) ?? 1) < 0
+  const overdue = !isDone(current.status) && isOverdue(current.due_date)
   const members = roster.data ?? []
   const projectList = projects.data ?? []
   const canEdit = capabilities.canEditTask
@@ -442,7 +442,7 @@ function ReadOnlyFields({
   canEdit: boolean
   onCommit: (body: TaskUpdate) => Promise<void>
 }) {
-  const { t } = useI18n()
+  const { locale, t } = useI18n()
   const { statusLabel, priorityLabel, statusOptions, priorityOptions } = useTaskVocabulary()
   const [editing, setEditing] = useState<string | null>(null)
 
@@ -545,7 +545,11 @@ function ReadOnlyFields({
         ) : (
           read(
             'due',
-            task.due_date ? task.due_date : <span className="muted">{t('tasks.noDeadline')}</span>,
+            task.due_date ? (
+              formatDeadline(task.due_date, locale)
+            ) : (
+              <span className="muted">{t('tasks.noDeadline')}</span>
+            ),
           )
         )}
       </ReadRow>

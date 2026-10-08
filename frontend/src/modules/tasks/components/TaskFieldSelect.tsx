@@ -89,11 +89,11 @@ export function TaskFieldSelect<T extends string>({
 /**
  * The deadline field.
  *
- * A date with no time of day - a deadline has none, and offering a time
- * component invites people to believe in a precision the data model does not
- * have. The control is our own calendar rather than `<input type="date">`:
- * the browser draws its own popup and will not colour the day it highlights
- * (see `core/ui/DateField`).
+ * An instant, not a day: "hand it in by 18:00" is what a deadline usually means,
+ * and a time that only the browser could show was a time the product could not
+ * store or compare. The control is our own calendar rather than
+ * `<input type="date">`, whose popup the browser paints itself and will not
+ * colour (see `core/ui/DateField`).
  */
 export function TaskDateField({
   label,
@@ -136,6 +136,11 @@ export function TaskDateField({
     <label className="field">
       <span>{label}</span>
       <DateField
+        withTime
+        // Picking a day without an hour means "by the end of it", which is what
+        // a deadline means; the alternative, midnight, would silently mark the
+        // task overdue from the moment it was written.
+        timeDefault="end-of-day"
         value={draft === '' ? null : draft}
         disabled={disabled || pending}
         invalid={error !== null}
