@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import ForeignKey, String, UniqueConstraint
+from sqlalchemy import ForeignKey, String, UniqueConstraint, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.types import Uuid
@@ -55,7 +55,11 @@ class UserSetting(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         index=True,
     )
     key: Mapped[str] = mapped_column(String(100), nullable=False)
-    value: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    # The server-side default matches the migration: an UPDATE ... SET value =
+    # $1 on a row that skipped it must not write NULL into a non-nullable column.
+    value: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb")
+    )
 
     __table_args__ = (
         UniqueConstraint("organization_id", "user_id", "key", name="uq_user_setting_org_user_key"),

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
+from uuid import UUID
 
 from app.core.auth.passwords import hash_password, rehash_if_needed, verify_password
 from app.core.errors import (
@@ -104,14 +105,17 @@ class UserService:
         *,
         first_name: str | None = None,
         last_name: str | None = None,
-        avatar_url: str | None = None,
+        avatar_file_id: UUID | None = None,
     ) -> User:
         if first_name is not None:
             user.first_name = first_name
         if last_name is not None:
             user.last_name = last_name
-        if avatar_url is not None:
-            user.avatar_url = avatar_url
+        if avatar_file_id is not None:
+            # The file was checked against this very user before we got here
+            # (users.api "update_me") - services trust callers inside the app,
+            # the checks that face the network live at the edge.
+            user.avatar_file_id = avatar_file_id
         await self._bus.publish_event(
             USER_PROFILE_UPDATED,
             actor_id=user.id,

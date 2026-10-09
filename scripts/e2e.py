@@ -231,7 +231,9 @@ def main() -> int:
         body={"title": "Write the launch checklist v2"},
     )
     check("partial update", status, 200)
-    check("deadline survives a partial update", untouched["due_date"], "2026-12-24")
+    # A bare date reads as midnight UTC (the deadline is an instant since
+    # `4b110a7`), and a partial update must hand that same instant back.
+    check("deadline survives a partial update", untouched["due_date"], "2026-12-24T00:00:00Z")
 
     status, cleared = call(
         "PATCH",
@@ -680,17 +682,19 @@ def main() -> int:
     check("a second organization is refused", status, 409)
 
     # --- portal administration -----------------------------------------------
-    # The user directory is the one cross-tenant read in the product, so the guard
-    # on it is `is_superuser` rather than an organization role. The bootstrap
-    # administrator passes it; everyone else is refused.
+    # The user directory is the one cross-tenant read in the product, and since
+    # `62e0737` it is open to every signed-in account: on a self-hosted
+    # installation every tenant is the same deployment, so looking at the list is
+    # a normal lookup. What stays superuser-only is granting rights over every
+    # tenant - that is what the checks below pin down.
     status, _ = call("GET", "/api/v1/users?limit=200", token=owner_token)
     check("the bootstrap administrator sees the user directory", status, 200)
 
     status, _ = call("GET", "/api/v1/users?limit=200", token=assignee_token)
-    check("a plain account sees no user directory", status, 403)
+    check("a plain account sees the user directory", status, 200)
 
     status, _ = call("GET", "/api/v1/users?limit=200", token=outsider_token)
-    check("a stranger sees no user directory", status, 403)
+    check("a stranger sees the user directory", status, 200)
 
     # Nobody may hand the right to themselves; the holder may pass it on.
     status, outsider_profile = call("GET", "/api/v1/users/me", token=outsider_token)

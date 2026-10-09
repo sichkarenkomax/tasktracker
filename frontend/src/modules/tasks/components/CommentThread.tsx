@@ -4,6 +4,7 @@ import { formatDateTime } from '../../../core/format'
 import { useMutation } from '../../../core/hooks/useAsync'
 import { useI18n } from '../../../core/i18n'
 import type { Member } from '../../../core/organizations/api'
+import { Avatar } from '../../../core/users/Avatar'
 import type { Comment } from '../types'
 
 /**
@@ -21,9 +22,15 @@ export interface CommentThreadProps {
   onDelete: (comment: Comment) => Promise<void>
 }
 
-function authorName(members: Member[], id: string, fallback: string): string {
+/**
+ * Who wrote it, as the roster knows them - the name and the face come from the
+ * same row so the two can never disagree (an unknown author, such as a removed
+ * member, falls back to the generic name and the letter it spells).
+ */
+function authorOf(members: Member[], id: string): { name: string; avatar: string | null } {
   const member = members.find((item) => item.user_id === id)
-  return member ? member.first_name || member.username : fallback
+  if (!member) return { name: '', avatar: null }
+  return { name: member.first_name || member.username, avatar: member.avatar_url }
 }
 
 export function CommentThread({
@@ -69,25 +76,30 @@ export function CommentThread({
         <p className="muted">{t('comments.empty')}</p>
       ) : (
         <ul className="comments">
-          {comments.map((comment) => (
-            <li key={comment.id} className="comment">
-              <div className="comment__meta">
-                <strong>{authorName(members, comment.author_id, t('activity.someone'))}</strong>
-                <time dateTime={comment.created_at}>{formatDateTime(comment.created_at)}</time>
-              </div>
-              <p className="comment__body">{comment.content}</p>
-              {canDelete(comment) ? (
-                <button
-                  type="button"
-                  className="link"
-                  disabled={removing.pending}
-                  onClick={() => void removing.run(comment)}
-                >
-                  {t('comments.delete')}
-                </button>
-              ) : null}
-            </li>
-          ))}
+          {comments.map((comment) => {
+            const author = authorOf(members, comment.author_id)
+            const name = author.name || t('activity.someone')
+            return (
+              <li key={comment.id} className="comment">
+                <div className="comment__meta">
+                  <Avatar src={author.avatar} name={name} size="sm" />
+                  <strong>{name}</strong>
+                  <time dateTime={comment.created_at}>{formatDateTime(comment.created_at)}</time>
+                </div>
+                <p className="comment__body">{comment.content}</p>
+                {canDelete(comment) ? (
+                  <button
+                    type="button"
+                    className="link"
+                    disabled={removing.pending}
+                    onClick={() => void removing.run(comment)}
+                  >
+                    {t('comments.delete')}
+                  </button>
+                ) : null}
+              </li>
+              )
+            })}
         </ul>
       )}
 

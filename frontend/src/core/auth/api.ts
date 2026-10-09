@@ -32,7 +32,12 @@ export const authApi = {
     return api.get<SessionUser>('/users/me')
   },
 
-  updateProfile(body: { first_name?: string; last_name?: string; avatar_url?: string | null }) {
+  updateProfile(body: {
+    first_name?: string
+    last_name?: string
+    /** A file id from the files API, never a URL (stage 2.3). */
+    avatar_file_id?: string | null
+  }) {
     return api.patch<SessionUser>('/users/me', body)
   },
 }

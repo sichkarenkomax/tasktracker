@@ -2721,6 +2721,16 @@ textarea {
   border-radius: var(--radius);
 }
 
+/* The person's name and their picture as one unit (stage 2.4): the row is a
+   space-between flex, and a bare avatar plus a bare name would be pushed to
+   opposite ends of it. */
+.participants__who {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  min-width: 0;
+}
+
 .participants__empty {
   font-size: 0.75rem;
   margin: 0;

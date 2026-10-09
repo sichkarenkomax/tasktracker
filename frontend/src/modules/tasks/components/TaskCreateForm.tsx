@@ -160,6 +160,7 @@ async function submit(event: React.FormEvent) {
             options={members.map((member) => ({
               value: member.user_id,
               label: member.first_name || member.username,
+              avatarUrl: member.avatar_url,
             }))}
             placeholder={t('tasks.noResponsible')}
             onChange={(next) => setAssigneeId(next ?? '')}

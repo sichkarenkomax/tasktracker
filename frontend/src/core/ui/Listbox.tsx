@@ -2,6 +2,7 @@ import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 
 import { Icon } from '../layout/Icon'
+import { Avatar } from '../users/Avatar'
 
 /**
  * One row of the list.
@@ -15,6 +16,16 @@ export interface ListboxOption<T extends string> {
   /** The native `<option title>` equivalent - a tooltip explaining the row. */
   hint?: string
   disabled?: boolean
+  /**
+   * A person's picture (stage 2.4). The key is deliberately different from
+   * "no picture": rows that are not people - a status, a project - never pass
+   * it and get no thumbnail, while a member without a photo passes `null` and
+   * gets the letter fallback, exactly as every other roster does.
+   *
+   * The native fallback on touch pointers cannot draw an image inside an
+   * `<option>`; there the label alone carries the row, as before.
+   */
+  avatarUrl?: string | null
 }
 
 interface ListboxBaseProps<T extends string> {
@@ -61,6 +72,7 @@ interface Row<T extends string> {
   hint?: string
   disabled: boolean
   clear: boolean
+  avatarUrl?: string | null
 }
 
 interface MenuPosition {
@@ -129,6 +141,7 @@ export function Listbox<T extends string>(props: ListboxProps<T>) {
       hint: option.hint,
       disabled: option.disabled === true,
       clear: false,
+      avatarUrl: option.avatarUrl,
     })
   }
   // "Empty" is a real state: with nothing selectable the trigger says so by
@@ -140,17 +153,25 @@ export function Listbox<T extends string>(props: ListboxProps<T>) {
   let selectedValues: ReadonlyArray<T>
   let isSelected: (value: T | null) => boolean
   let triggerText: string
+  // The selected person's picture in the trigger itself, so the closed control
+  // reads as "this face" rather than a name that could belong to anybody.
+  let triggerAvatar: string | null | undefined
   if (props.multiple) {
     const current: ReadonlyArray<T> = props.value
     selectedValues = current
     isSelected = (value) => value !== null && current.includes(value)
     triggerText = current.map((value) => labelOf.get(value) ?? value).join(', ')
+    // Several faces in one trigger would be a row of thumbnails; the labels
+    // already distinguish the people there.
+    triggerAvatar = undefined
   } else {
     const current: T | null = props.value
     selectedValues = current === null ? [] : [current]
     isSelected = (value) => value === current
     triggerText =
       current !== null ? (labelOf.get(current) ?? current) : (props.placeholder ?? '')
+    triggerAvatar =
+      current !== null ? props.options.find((option) => option.value === current)?.avatarUrl : undefined
   }
 
   function pick(row: Row<T>) {
@@ -433,6 +454,9 @@ export function Listbox<T extends string>(props: ListboxProps<T>) {
               onMouseDown={(event) => event.preventDefault()}
               onClick={() => pick(row)}
             >
+              {row.avatarUrl !== undefined ? (
+                <Avatar src={row.avatarUrl} name={row.label} size="sm" />
+              ) : null}
               <span>{row.label}</span>
               {isSelected(row.value) && !row.clear ? (
                 <Icon name="check" size={13} className="listbox__option-check" />
@@ -462,6 +486,9 @@ export function Listbox<T extends string>(props: ListboxProps<T>) {
         onClick={() => (open ? close(false) : openMenu())}
         onKeyDown={onKeyDown}
       >
+        {triggerAvatar !== undefined ? (
+          <Avatar src={triggerAvatar} name={triggerText} size="sm" />
+        ) : null}
         <span className="listbox__value">{triggerText}</span>
         <Icon name="chevron" size={14} className="listbox__chevron" />
       </button>

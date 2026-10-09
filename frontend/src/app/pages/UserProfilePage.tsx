@@ -211,8 +211,10 @@ function AvatarUpload() {
   const upload = useMutation<File, void>(async (file) => {
     if (!organizationId || !user) throw new Error(t('error.generic'))
     const stored = await filesApi.upload(organizationId, file)
+    // The profile stores which file, not where it lives: the server derives
+    // the URL and checks the viewer's rights on every read (stage 2.3).
     await authApi.updateProfile({
-      avatar_url: filesApi.downloadUrl(stored.id, organizationId),
+      avatar_file_id: stored.id,
     })
     // The header and this page both read the signed-in person from the auth
     // context, so without this the new picture is stored and still not shown.

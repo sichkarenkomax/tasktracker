@@ -13,6 +13,7 @@ be missing from autogenerate.
 from __future__ import annotations
 
 from app.core.activity import models as activity_models
+from app.core.files import models as file_models
 from app.core.organizations import models as organization_models
 from app.core.projects import models as project_models
 from app.core.settings import models as settings_models
@@ -21,6 +22,7 @@ from app.modules.tasks import models as task_models
 
 __all__ = [
     "activity_models",
+    "file_models",
     "organization_models",
     "project_models",
     "settings_models",

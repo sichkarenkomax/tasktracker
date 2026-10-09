@@ -4,6 +4,7 @@ import { useMutation } from '../../../core/hooks/useAsync'
 import { useI18n } from '../../../core/i18n'
 import { Icon } from '../../../core/layout/Icon'
 import type { Member } from '../../../core/organizations/api'
+import { Avatar } from '../../../core/users/Avatar'
 import { Listbox } from '../../../core/ui/Listbox'
 import type { ParticipantRole, TaskParticipant } from '../types'
 
@@ -48,6 +49,18 @@ export function ParticipantList({
     const member = members.find((item) => item.user_id === id)
     return member ? member.first_name || member.username : t('activity.someone')
   }
+
+  const avatarOf = (id: string): string | null =>
+    members.find((item) => item.user_id === id)?.avatar_url ?? null
+
+  // Name and face in one wrapper: the row is a space-between flex, and a bare
+  // avatar plus a bare name would be pushed to opposite ends of it.
+  const whoRow = (id: string) => (
+    <span className="participants__who">
+      <Avatar src={avatarOf(id)} name={nameOf(id)} size="sm" />
+      {nameOf(id)}
+    </span>
+  )
 
   const rowsFor = (role: ParticipantRole) =>
     participants
@@ -97,7 +110,7 @@ export function ParticipantList({
         <ul className="participants__list">
           {rows.map((participant) => (
             <li key={`${participant.role}-${participant.user_id}`}>
-              <span>{nameOf(participant.user_id)}</span>
+              {whoRow(participant.user_id)}
               {canEdit ? (
                 <button
                   type="button"
@@ -133,6 +146,7 @@ export function ParticipantList({
                 options={candidates.map((member) => ({
                   value: member.user_id,
                   label: member.first_name || member.username,
+                  avatarUrl: member.avatar_url,
                 }))}
                 placeholder={t('tasks.anyone')}
                 onChange={(next) => setWho(next ?? '')}
@@ -176,7 +190,7 @@ export function ParticipantList({
           <span>{t('tasks.reporter')}</span>
         </div>
         <ul className="participants__list">
-          <li>{nameOf(reporterId)}</li>
+          <li>{whoRow(reporterId)}</li>
         </ul>
       </div>
 
@@ -186,7 +200,7 @@ export function ParticipantList({
           <span>{t('tasks.responsible')}</span>
         </div>
         <ul className="participants__list">
-          <li>{nameOf(responsibleId)}</li>
+          <li>{whoRow(responsibleId)}</li>
         </ul>
       </div>
 

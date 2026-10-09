@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from sqlalchemy import BigInteger, ForeignKey, String
+from sqlalchemy import BigInteger, ForeignKey, Index, String, text
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.types import Uuid
 
@@ -78,3 +78,23 @@ class StorageQuota(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     #: Bytes this subject may store in total. Zero means "no limit of its own",
     #: which is how a department that has never been given a quota behaves.
     limit_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
+
+    # One allowance per subject - a partial unique index rather than a composite
+    # one, because a composite would treat the NULL in the unused column as
+    # equal-but-unknown and let a second row for the same department in.
+    __table_args__ = (
+        Index(
+            "uq_storage_quotas_department",
+            "organization_id",
+            "department_id",
+            unique=True,
+            postgresql_where=text("department_id IS NOT NULL"),
+        ),
+        Index(
+            "uq_storage_quotas_user",
+            "organization_id",
+            "user_id",
+            unique=True,
+            postgresql_where=text("user_id IS NOT NULL"),
+        ),
+    )

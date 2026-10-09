@@ -14,7 +14,12 @@ import { Listbox } from '../../../core/ui/Listbox'
 export interface TaskFieldSelectProps<T extends string> {
   label: string
   value: T | null
-  options: ReadonlyArray<{ value: T; label: string }>
+  /**
+   * `avatarUrl` is only ever passed for fields whose options are people (the
+   * responsible person, stage 2.4); a status or a project omits the key and
+   * gets no thumbnail.
+   */
+  options: ReadonlyArray<{ value: T; label: string; avatarUrl?: string | null }>
   /**
    * Text for the blank option, which also makes the field clearable.
    *

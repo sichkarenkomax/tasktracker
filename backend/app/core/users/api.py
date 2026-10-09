@@ -18,13 +18,14 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Response
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.core.auth.dependencies import CurrentUser, SessionDep
 from app.core.auth.schemas import UserSummary
 from app.core.dependencies import EventBusDep
 from app.core.errors import NotFoundError, PermissionDeniedError
+from app.core.files.service import file_service
 from app.core.pagination import PageDep
 from app.core.permissions.service import AuthorizationService
 from app.core.users.repository import UserRepository
@@ -43,7 +44,11 @@ class UserProfileUpdate(BaseModel):
 
     first_name: str | None = Field(default=None, max_length=64)
     last_name: str | None = Field(default=None, max_length=64)
-    avatar_url: str | None = Field(default=None, max_length=512)
+    #: A reference to one of the caller's own files, never a URL: the server
+    #: decides where a picture is read from and who may see it (stage 2.3).
+    #: Omitting the key leaves the avatar alone; the file itself, deleted
+    #: through the files API, clears it via the foreign key.
+    avatar_file_id: UUID | None = None
 
 
 class AdminUserRead(UserSummary):
@@ -91,11 +96,16 @@ async def update_me(
     session: SessionDep,
     bus: EventBusDep,
 ) -> UserProfile:
+    if payload.avatar_file_id is not None:
+        # Binding is where "whose file is this, and is it a picture?" gets
+        # answered; the read side answers "may this viewer see it?" per
+        # request instead of trusting a URL written once at upload time.
+        await file_service(session).require_owned_image(payload.avatar_file_id, owner_id=user.id)
     await UserService(UserRepository(session), bus).update_profile(
         user,
         first_name=payload.first_name,
         last_name=payload.last_name,
-        avatar_url=payload.avatar_url,
+        avatar_file_id=payload.avatar_file_id,
     )
     await session.commit()
     return UserProfile.model_validate(user)
@@ -157,3 +167,48 @@ async def read_user(
     if target is None:
         raise NotFoundError("User not found")
     return UserSummary.model_validate(target)
+
+
+@router.get("/{user_id}/avatar", summary="A person's avatar image")
+async def read_avatar(
+    user_id: UUID,
+    user: CurrentUser,
+    session: SessionDep,
+) -> Response:
+    """Serve the bytes behind ``avatar_url``, deciding permission per request.
+
+    This is the half the stored URL used to skip: the profile only remembers
+    *which file* the picture is, and every read checks that the viewer may see
+    the organization that file belongs to - the same ``user.view`` bar as the
+    profile itself. An outsider gets 403 rather than a picture, and a file
+    deleted from the files API simply stops resolving (the foreign key clears
+    the avatar), so no response ever points at nothing.
+    """
+    target = await UserRepository(session).get(user_id)
+    if target is None:
+        raise NotFoundError("User not found")
+    if target.avatar_file_id is None:
+        # Deliberately the same shape as "no such user": whether somebody has
+        # a picture is not information this route hands out.
+        raise NotFoundError("User not found")
+    row = await file_service(session).find(target.avatar_file_id)
+    if row is None:
+        # Unreachable while the foreign key holds, but a missing row must not
+        # become a 500 if it ever happens.
+        raise NotFoundError("User not found")
+    await AuthorizationService(session).require_permission(
+        user=user, organization_id=row.organization_id, permission="user.view"
+    )
+    data = await file_service(session).read(row)
+    return Response(
+        content=data,
+        media_type=row.content_type,
+        headers={
+            # Images only ever land here (see ``require_owned_image``), and
+            # nosniff keeps the bytes from being reinterpreted on our origin.
+            "X-Content-Type-Options": "nosniff",
+            # The URL carries the file id as a version, so this may be kept
+            # for a while without ever showing a previous picture.
+            "Cache-Control": "private, max-age=3600",
+        },
+    )

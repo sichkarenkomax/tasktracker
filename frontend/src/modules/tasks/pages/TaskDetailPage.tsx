@@ -258,6 +258,7 @@ function TaskDetail() {
               options={members.map((member) => ({
                 value: member.user_id,
                 label: member.first_name || member.username,
+                avatarUrl: member.avatar_url,
               }))}
               // No empty option at all: a task always has somebody responsible,
               // and a blank choice is a value the API refuses rather than stores.
@@ -471,6 +472,7 @@ function ReadOnlyFields({
   const memberOptions = members.map((member) => ({
     value: member.user_id,
     label: member.first_name || member.username,
+    avatarUrl: member.avatar_url,
   }))
   const projectOptions = projects.map((project) => ({ value: project.id, label: project.name }))
 

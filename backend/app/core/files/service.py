@@ -23,15 +23,18 @@ for a group without asking, while the person has been asked.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import lru_cache
+from pathlib import Path
 from typing import Any
 from uuid import UUID, uuid4
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import get_settings
 from app.core.errors import PermissionDeniedError, ValidationError
 from app.core.files.models import File, StorageQuota
-from app.core.files.storage import FileStorage
+from app.core.files.storage import FileStorage, build_storage
 from app.core.organizations.models import OrganizationMember
 
 #: Types accepted in v1. Deliberately short, and deliberately without SVG: it is
@@ -49,6 +52,29 @@ ALLOWED_CONTENT_TYPES: frozenset[str] = frozenset(
         "text/csv",
     }
 )
+
+
+@lru_cache(maxsize=4)
+def _storage_for(root: Path) -> FileStorage:
+    """One storage object per root.
+
+    Resolved per request rather than at import, because the root comes from
+    the environment and a test - or an S3 module registering itself later -
+    has to be able to change it. The cache keeps that from rebuilding a
+    wrapper per request.
+    """
+    return build_storage(root)
+
+
+def file_service(session: AsyncSession) -> FileService:
+    """The file service for one request.
+
+    Lives here rather than in the files router because callers exist outside
+    it: the avatar endpoint (stage 2.3) sits on the users router but reads
+    bytes through the very same service, so that "who may store what" and
+    "who may read what" stay in one module.
+    """
+    return FileService(session, _storage_for(get_settings().uploads_dir))
 
 
 @dataclass(frozen=True)
@@ -89,6 +115,39 @@ class FileService:
 
     async def read(self, row: File) -> bytes:
         return await self._storage.read(row.storage_key)
+
+    async def find(self, file_id: UUID) -> File | None:
+        """The row behind ``file_id``, with no permission decision made.
+
+        The caller learns *which* organization owns the file only from the
+        row itself, so the permission check can precede it the way
+        :meth:`get` does - it has to come after, and every caller must make
+        it before showing anything.
+        """
+        stmt = select(File).where(File.id == file_id)
+        row: File | None = await self._session.scalar(stmt)
+        return row
+
+    async def require_owned_image(self, file_id: UUID, *, owner_id: UUID) -> File:
+        """A file the caller may pin as their avatar: their own upload, a picture.
+
+        This answers "whose file is this?" once, at binding time: a profile
+        may only point at a file the person uploaded themselves, and only at
+        an image - the whitelist also admits text and PDF, and those are not
+        avatars. "Missing" and "not yours" are deliberately the same answer,
+        for the reason :meth:`get` gives the same one: an id must not be
+        probeable.
+        """
+        stmt = select(File).where(File.id == file_id, File.owner_id == owner_id)
+        row = await self._session.scalar(stmt)
+        if row is None:
+            raise PermissionDeniedError("No such file of yours")
+        if not row.content_type.startswith("image/"):
+            raise ValidationError(
+                "Only image files can become an avatar",
+                details={"content_type": row.content_type},
+            )
+        return row
 
     # --- writing ------------------------------------------------------------
 

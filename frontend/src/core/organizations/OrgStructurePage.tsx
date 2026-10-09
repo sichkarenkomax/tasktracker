@@ -827,6 +827,7 @@ function DepartmentInspector({
             options={members.map((item) => ({
               value: item.user_id,
               label: displayName(item),
+              avatarUrl: item.avatar_url,
             }))}
             placeholder={t('org.noManager')}
             clearable
@@ -1005,6 +1006,7 @@ function PersonInspector({
             options={candidates.map((item) => ({
               value: item.user_id,
               label: displayName(item),
+              avatarUrl: item.avatar_url,
             }))}
             placeholder={t('org.noManager')}
             clearable
@@ -1045,6 +1047,7 @@ function PersonInspector({
             options={deputyCandidates.map((item) => ({
               value: item.user_id,
               label: displayName(item),
+              avatarUrl: item.avatar_url,
             }))}
             placeholder={t('org.addDeputy')}
             aria-label={t('org.addDeputy')}

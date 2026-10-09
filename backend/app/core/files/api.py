@@ -8,8 +8,6 @@ directory listing.
 
 from __future__ import annotations
 
-from functools import lru_cache
-from pathlib import Path
 from typing import Annotated, Any
 from uuid import UUID
 
@@ -17,7 +15,6 @@ from fastapi import APIRouter, Response, UploadFile, status
 from fastapi import File as FormFile
 from sqlalchemy import select
 
-from app.config import get_settings
 from app.core.auth.dependencies import CurrentUser, SessionDep
 from app.core.errors import NotFoundError, PermissionDeniedError, ValidationError
 from app.core.files.models import StorageQuota
@@ -28,27 +25,11 @@ from app.core.files.schemas import (
     QuotaWrite,
     UploadLimits,
 )
-from app.core.files.service import FileService, UploadRequest
-from app.core.files.storage import FileStorage, build_storage
+from app.core.files.service import UploadRequest, file_service
 from app.core.permissions.service import AuthorizationService
 from app.core.settings.service import SettingsService
 
 router = APIRouter(tags=["files"])
-
-
-@lru_cache(maxsize=4)
-def _storage_for(root: Path) -> FileStorage:
-    """One storage object per root.
-
-    Resolved per request rather than at import, because the root comes from the
-    environment and a test - or an S3 module registering itself later - has to be
-    able to change it. The cache keeps that from rebuilding a wrapper per request.
-    """
-    return build_storage(root)
-
-
-def _service(session: SessionDep) -> FileService:
-    return FileService(session, _storage_for(get_settings().uploads_dir))
 
 
 async def _organization_settings(session: SessionDep, organization_id: UUID) -> dict[str, Any]:
@@ -73,7 +54,7 @@ async def read_limits(
         user=user, organization_id=organization_id, permission="organization.view"
     )
     settings = await _organization_settings(session, organization_id)
-    service = _service(session)
+    service = file_service(session)
     state = await service.effective_quota(organization_id, user.id, settings)
 
     portal_limit = int(settings.get("storage_quota_bytes") or 0)
@@ -106,7 +87,7 @@ async def upload_file(
     file: Annotated[UploadFile, FormFile()],
 ) -> FileRead:
     settings = await _organization_settings(session, organization_id)
-    row = await _service(session).upload(
+    row = await file_service(session).upload(
         organization_id=organization_id,
         user_id=user.id,
         settings=settings,
@@ -128,7 +109,7 @@ async def read_my_quota(
     organization_id: UUID, user: CurrentUser, session: SessionDep
 ) -> MyQuotaRead:
     settings = await _organization_settings(session, organization_id)
-    state = await _service(session).effective_quota(organization_id, user.id, settings)
+    state = await file_service(session).effective_quota(organization_id, user.id, settings)
     return MyQuotaRead(
         used_bytes=state.used_bytes,
         limit_bytes=state.limit_bytes,
@@ -226,7 +207,7 @@ async def download_file(
     await AuthorizationService(session).require_permission(
         user=user, organization_id=organization_id, permission="organization.view"
     )
-    service = _service(session)
+    service = file_service(session)
     row = await service.get(organization_id, file_id)
     data = await service.read(row)
     return Response(
@@ -253,7 +234,7 @@ async def delete_file(
     await AuthorizationService(session).require_permission(
         user=user, organization_id=organization_id, permission="organization.view"
     )
-    service = _service(session)
+    service = file_service(session)
     row = await service.get(organization_id, file_id)
     if row.owner_id != user.id and not user.is_superuser:
         # Reading is a tenant-wide permission; removing is the uploader's own

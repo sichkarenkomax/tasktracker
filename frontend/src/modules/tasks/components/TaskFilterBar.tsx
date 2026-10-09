@@ -189,6 +189,7 @@ export function TaskFilterBar({ value, members, projects, onChange }: TaskFilter
               options={members.map((member) => ({
                 value: member.user_id,
                 label: member.first_name || member.username,
+                avatarUrl: member.avatar_url,
               }))}
               placeholder={t('tasks.anyone')}
               clearable

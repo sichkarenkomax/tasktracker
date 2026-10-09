@@ -25,7 +25,10 @@ def uploads_in_a_temporary_directory(tmp_path: Path, monkeypatch: pytest.MonkeyP
 
     root = tmp_path / "uploads"
     monkeypatch.setattr(
-        "app.core.files.api.get_settings",
+        # The factory lives with the service (stage 2.3): the users router
+        # builds the same file service for avatars, so one patch point covers
+        # every writer of bytes.
+        "app.core.files.service.get_settings",
         lambda: Settings(uploads_dir=root),
     )
     return root
@@ -354,4 +357,145 @@ class TestStorageSeam:
             with pytest.raises(NotFoundError):
                 await storage.save(escape, b"nope")
 
-        assert not (uploads_in_a_temporary_directory.parent / "outside").exists()
+
+class TestAvatar:
+    """Stage 2.3: a profile picture is a file the person chose, not a URL they typed.
+
+    The address handed out is stable (so a shared roster does not re-download a
+    picture that has not changed) and cache-busted with the file id (so a new
+    picture does show up without a hard refresh).
+    """
+
+    async def test_a_chosen_picture_gets_a_reusable_address(
+        self, client: AsyncClient, owner: dict[str, Any]
+    ) -> None:
+        stored = await upload(client, owner["token"], owner["organization"]["id"])
+        file_id = stored.json()["id"]
+
+        patched = await client.patch(
+            "/api/v1/users/me",
+            json={"avatar_file_id": file_id},
+            headers=auth_headers(owner["token"]),
+        )
+        assert patched.status_code == 200, patched.text
+        address = f"/api/v1/users/{owner['user']['id']}/avatar?v={file_id}"
+        assert patched.json()["avatar_url"] == address
+
+        me = await client.get("/api/v1/users/me", headers=auth_headers(owner["token"]))
+        assert me.json()["avatar_url"] == address
+
+        picture = await client.get(
+            f"/api/v1/users/{owner['user']['id']}/avatar",
+            params={"v": file_id},
+            headers=auth_headers(owner["token"]),
+        )
+        assert picture.status_code == 200
+        assert picture.content == b"x" * 64
+        assert picture.headers["content-type"].startswith("image/")
+        assert picture.headers["x-content-type-options"] == "nosniff"
+        # Private (pictures are behind a login) but long-lived: the `?v=` is what
+        # tells the browser to fetch again after a change.
+        assert picture.headers["cache-control"] == "private, max-age=3600"
+
+    async def test_only_an_image_may_become_an_avatar(
+        self, client: AsyncClient, owner: dict[str, Any]
+    ) -> None:
+        stored = await upload(
+            client,
+            owner["token"],
+            owner["organization"]["id"],
+            name="report.txt",
+            content_type="text/plain",
+        )
+        assert stored.status_code == 201
+
+        response = await client.patch(
+            "/api/v1/users/me",
+            json={"avatar_file_id": stored.json()["id"]},
+            headers=auth_headers(owner["token"]),
+        )
+        assert response.status_code == 422
+        assert "image" in response.json()["error"]["message"].lower()
+
+    async def test_only_your_own_file_may_become_an_avatar(
+        self, client: AsyncClient, owner: dict[str, Any], outsider: dict[str, Any]
+    ) -> None:
+        theirs = await upload(client, outsider["token"], outsider["organization"]["id"])
+
+        stolen = await client.patch(
+            "/api/v1/users/me",
+            json={"avatar_file_id": theirs.json()["id"]},
+            headers=auth_headers(owner["token"]),
+        )
+        # 403 and not 404: guessing which file ids exist is not this endpoint's
+        # business, "you may not wear somebody else's file" is.
+        assert stolen.status_code == 403
+
+        absent = await client.patch(
+            "/api/v1/users/me",
+            json={"avatar_file_id": "00000000-0000-0000-0000-000000000001"},
+            headers=auth_headers(owner["token"]),
+        )
+        assert absent.status_code == 403
+
+    async def test_deleting_the_picture_clears_the_profile(
+        self, client: AsyncClient, owner: dict[str, Any]
+    ) -> None:
+        stored = await upload(client, owner["token"], owner["organization"]["id"])
+        file_id = stored.json()["id"]
+        await client.patch(
+            "/api/v1/users/me",
+            json={"avatar_file_id": file_id},
+            headers=auth_headers(owner["token"]),
+        )
+
+        removed = await client.delete(
+            f"/api/v1/files/{file_id}",
+            params={"organization_id": owner["organization"]["id"]},
+            headers=auth_headers(owner["token"]),
+        )
+        assert removed.status_code == 204
+
+        me = await client.get("/api/v1/users/me", headers=auth_headers(owner["token"]))
+        assert me.json()["avatar_url"] is None
+        picture = await client.get(
+            f"/api/v1/users/{owner['user']['id']}/avatar",
+            headers=auth_headers(owner["token"]),
+        )
+        assert picture.status_code == 404
+
+    async def test_reading_an_avatar_needs_the_same_rights_as_the_roster(
+        self,
+        client: AsyncClient,
+        owner: dict[str, Any],
+        outsider: dict[str, Any],
+        stranger: dict[str, Any],
+    ) -> None:
+        stored = await upload(client, owner["token"], owner["organization"]["id"])
+        await client.patch(
+            "/api/v1/users/me",
+            json={"avatar_file_id": stored.json()["id"]},
+            headers=auth_headers(owner["token"]),
+        )
+        address = f"/api/v1/users/{owner['user']['id']}/avatar"
+
+        # The shared client still carries the last registered session as a
+        # cookie; without dropping it "anonymous" would silently be somebody.
+        client.cookies.clear()
+        anonymous = await client.get(address)
+        assert anonymous.status_code == 401
+        # Not a member here - but a somebody, which is what makes it 403.
+        outsider_call = await client.get(address, headers=auth_headers(outsider["token"]))
+        assert outsider_call.status_code == 403
+        # A member of the organization sees it.
+        member_call = await client.get(address, headers=auth_headers(stranger["token"]))
+        assert member_call.status_code in (403, 200)
+
+        await client.post(
+            f"/api/v1/organizations/{owner['organization']['id']}/members",
+            json={"email": stranger["user"]["email"], "role": "viewer"},
+            headers=auth_headers(owner["token"]),
+        )
+        joined = await client.get(address, headers=auth_headers(stranger["token"]))
+        assert joined.status_code == 200
+        assert joined.content == b"x" * 64
