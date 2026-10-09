@@ -6,6 +6,7 @@ import { useI18n } from '../i18n'
 import type { TranslationKey } from '../i18n'
 import { Icon } from '../layout/Icon'
 import { Listbox } from '../ui/Listbox'
+import { Avatar } from '../users/Avatar'
 import { organizationsApi } from './api'
 import type { Member, OrganizationRole } from './api'
 import { useOrganizationId } from './OrganizationContext'
@@ -149,9 +150,11 @@ function MemberRow({
 
   return (
     <li className="member">
-      <span className="member__avatar" aria-hidden="true">
-        {(member.first_name || member.username).charAt(0).toUpperCase()}
-      </span>
+      <Avatar
+        src={member.avatar_url}
+        name={member.first_name || member.username}
+        size="sm"
+      />
 
       <div className="member__identity">
         <strong>

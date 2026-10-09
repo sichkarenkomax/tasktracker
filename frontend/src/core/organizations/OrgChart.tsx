@@ -3,6 +3,7 @@ import type { DragEvent } from 'react'
 
 import { useI18n } from '../i18n'
 import { Icon } from '../layout/Icon'
+import { Avatar } from '../users/Avatar'
 import type { Member, OrgPosition, OrgStructure } from './api'
 import { buildChart, departmentSubtree, textWidth, wouldReportLoop } from './chartLayout'
 import type { ChartGroup, ChartNode } from './chartLayout'
@@ -457,9 +458,7 @@ function PersonCard({
       onClick={() => onSelect(node.userId)}
       aria-pressed={selected}
     >
-      <span className="orgperson__avatar" aria-hidden="true">
-        {node.name.charAt(0).toUpperCase()}
-      </span>
+      <Avatar src={node.avatarUrl} name={node.name} size="sm" />
       <span className="orgperson__text">
         <span className="orgperson__name">{node.name}</span>
         <span className="orgperson__title">{title ?? t('org.noPosition')}</span>

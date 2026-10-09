@@ -30,3 +30,9 @@ Thumbs.db
 # --- Runtime ---
 *.log
 /logs/
+
+# --- Local data dumps ---
+# `make backup` writes a full pg_dump here. A dump carries password hashes,
+# session tokens and other people's rows: it belongs on the machine that made
+# it, not in the history.
+backups/

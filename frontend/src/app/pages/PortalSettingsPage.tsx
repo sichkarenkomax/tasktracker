@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
-import { DATE_FORMATS, formatDateTime, getDateFormat } from '../../core/format'
+import { DATE_FORMATS, formatDateTime, getDateFormat, setDateFormat } from '../../core/format'
 import type { DateFormat } from '../../core/format'
 import { useAsync, useMutation } from '../../core/hooks/useAsync'
 import { useI18n } from '../../core/i18n'
@@ -11,6 +11,7 @@ import { organizationsApi } from '../../core/organizations/api'
 import { useOrganization } from '../../core/organizations/OrganizationContext'
 import { RequiresOrganization } from '../../core/organizations/RequiresOrganization'
 import { useCapabilities } from '../../core/permissions/capabilities'
+import { personalSettingsApi } from '../../core/settings/api'
 
 /**
  * Portal settings: the organization itself.
@@ -42,6 +43,17 @@ function gigabytesToBytes(value: number): number {
   return Number.isFinite(value) ? value * GIGABYTE : 0
 }
 
+/** Bytes back into the unit the field is typed in. Both round to whole units on
+ *  purpose: a limit of 1 048 575 bytes shown as "0.99" invites being "fixed" by
+ *  typing a round number that means something else. */
+function bytesToMegabytes(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) ? Math.round(value / MEGABYTE) : 0
+}
+
+function bytesToGigabytes(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) ? Math.round(value / GIGABYTE) : 0
+}
+
 function Settings() {
   const { t } = useI18n()
   const navigate = useNavigate()
@@ -59,8 +71,39 @@ function Settings() {
   const [confirming, setConfirming] = useState(false)
   // The two file limits are entered in megabytes and gigabytes and stored in
   // bytes: the settings screen is read by people, the server counts bytes.
-  const [fileLimits, setFileLimits] = useState({ maxFileSizeMb: 0, quotaGb: 0 })
-  const [dateFormat, setDateFormat] = useState<DateFormat>(getDateFormat)
+  // Only the person's own edits live in state - the fields themselves show what
+  // the server holds. Seeding the inputs once from state meant a reload always
+  // showed the defaults, and saving the untouched panel wrote those defaults
+  // over the real limits.
+  const [fileLimitDraft, setFileLimitDraft] = useState<{
+    maxFileSizeMb: number
+    quotaGb: number
+  } | null>(null)
+  const storedValues = settings.data?.values
+  const maxFileSizeMb =
+    fileLimitDraft?.maxFileSizeMb ?? bytesToMegabytes(storedValues?.max_file_size_bytes)
+  const quotaGb = fileLimitDraft?.quotaGb ?? bytesToGigabytes(storedValues?.storage_quota_bytes)
+  const editFileLimits = (patch: { maxFileSizeMb?: number; quotaGb?: number }) =>
+    setFileLimitDraft({ maxFileSizeMb, quotaGb, ...patch })
+
+  // The date format follows the same rule as the limits: the control shows what
+  // the portal stores, and state holds only the change the person just made.
+  // Reading it from the module instead would show whatever was in hand when the
+  // page mounted - which is the default, because the portal's value arrives a
+  // moment later - and the field would look like it had never been saved.
+  const [dateFormatDraft, setDateFormatDraft] = useState<string | null>(null)
+  const portalDateFormat =
+    typeof storedValues?.date_format === 'string' ? storedValues.date_format : getDateFormat()
+  const dateFormat = dateFormatDraft ?? portalDateFormat
+
+  // A personal format outranks the portal's, and the listbox would then change a
+  // value nothing reads. Saying so beats letting the person conclude that saving
+  // is broken a second time.
+  const personal = useAsync(
+    () => (organizationId ? personalSettingsApi.read(organizationId) : Promise.resolve(null)),
+    [organizationId],
+  )
+  const hasOwnDateFormat = typeof personal.data?.stored?.date_format === 'string'
   const [fileError, setFileError] = useState<string | null>(null)
 
   if (!organization || organizationId === null) return null
@@ -91,7 +134,9 @@ function Settings() {
   })
 
   // The portal's own date format is the fallback for anybody who has not chosen
-  // one, so it is saved with everything else this screen owns.
+  // one, so it is saved with everything else this screen owns. A refusal is shown
+  // like the limits': a setting that silently does not save is worse than one
+  // that says it did not.
   const saveDateFormatSetting = useMutation<{ date_format: string }, void>(async (body) => {
     await organizationsApi.updateSettings(organizationId, body)
   })
@@ -174,29 +219,51 @@ function Settings() {
             const done = await saveFiles.run({
               // Written in bytes, entered in the units people think in. Zero
               // means no limit, and it is the default a fresh portal starts at.
-              max_file_size_bytes: Math.round(megabytesToBytes(fileLimits.maxFileSizeMb)),
-              storage_quota_bytes: Math.round(gigabytesToBytes(fileLimits.quotaGb)),
+              max_file_size_bytes: Math.round(megabytesToBytes(maxFileSizeMb)),
+              storage_quota_bytes: Math.round(gigabytesToBytes(quotaGb)),
             })
-            if (done !== null) reload()
-            else setFileError(saveFiles.error)
+            // The draft is dropped so the fields fall back to what the server
+            // now holds instead of to whatever was typed a moment ago.
+            if (done !== null) {
+              setFileLimitDraft(null)
+              reload()
+            } else setFileError(saveFiles.error)
           }}
         >
           <div className="fields">
             <label className="field">
               <span>{t('settings.dateFormat')}</span>
               <Listbox<DateFormat>
-                value={dateFormat}
+                value={dateFormat as DateFormat}
                 options={DATE_FORMATS.map((id) => ({
                   value: id,
                   label: t(`dateFormat.${id}` as TranslationKey),
                 }))}
-disabled={!mayEdit}
+                disabled={!mayEdit}
                 onChange={(next) => {
                   if (next === null) return
+                  setFileError(null)
+                  setDateFormatDraft(next)
+                  // Applied at once, before the server is told: a date format is
+                  // text on every screen, and making the reader press Save to see
+                  // what they just chose is how this reads as a broken setting.
                   setDateFormat(next)
-                  void saveDateFormatSetting.run({ date_format: next })
+                  void saveDateFormatSetting.run({ date_format: next }).then((done) => {
+                    if (done === null) {
+                      setFileError(saveDateFormatSetting.error)
+                      return
+                    }
+                    // The draft is dropped *and* the settings are re-read, so the
+                    // field falls back to what the server now holds rather than to
+                    // the answer it still has cached from before the save.
+                    setDateFormatDraft(null)
+                    settings.reload()
+                  })
                 }}
               />
+              {hasOwnDateFormat ? (
+                <span className="field__note">{t('settings.dateFormatOverridden')}</span>
+              ) : null}
             </label>
             <label className="field">
               <span>{t('settings.maxFileSize')}</span>
@@ -204,10 +271,10 @@ disabled={!mayEdit}
                 type="number"
                 min={0}
                 step={1}
-                value={fileLimits.maxFileSizeMb}
+                value={maxFileSizeMb}
                 disabled={!mayEdit}
                 onChange={(event) =>
-                  setFileLimits((state) => ({ ...state, maxFileSizeMb: Number(event.target.value) }))
+                  editFileLimits({ maxFileSizeMb: Number(event.target.value) })
                 }
               />
             </label>
@@ -217,11 +284,9 @@ disabled={!mayEdit}
                 type="number"
                 min={0}
                 step={1}
-                value={fileLimits.quotaGb}
+                value={quotaGb}
                 disabled={!mayEdit}
-                onChange={(event) =>
-                  setFileLimits((state) => ({ ...state, quotaGb: Number(event.target.value) }))
-                }
+                onChange={(event) => editFileLimits({ quotaGb: Number(event.target.value) })}
               />
             </label>
           </div>

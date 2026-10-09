@@ -758,19 +758,6 @@ button.orgbox__title {
   background: color-mix(in srgb, var(--accent) 10%, transparent);
 }
 
-.orgperson__avatar {
-  display: grid;
-  place-items: center;
-  width: 1.75rem;
-  height: 1.75rem;
-  flex-shrink: 0;
-  border-radius: 50%;
-  background: var(--nav-active);
-  color: var(--text);
-  font-size: 0.6875rem;
-  font-weight: 600;
-}
-
 .orgperson__text {
   display: flex;
   flex-direction: column;
@@ -881,6 +868,22 @@ button.orgbox__title {
   gap: var(--space-2);
   align-items: center;
   margin-bottom: var(--space-4);
+}
+
+/* A department's mark. It used to borrow the person's avatar circle, which said
+   "a face you could recognise" about something that has no face; a squarer mark
+   on the quiet surface keeps the two apart at a glance. */
+.org__department-mark {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: var(--radius);
+  background: var(--nav-active);
+  color: var(--text);
+  font-size: 0.6875rem;
+  font-weight: 600;
 }
 
 .org__inspector-head > div {
@@ -1177,18 +1180,6 @@ button.orgbox__title {
   font-size: 0.75rem;
 }
 
-.account__avatar {
-  display: grid;
-  place-items: center;
-  width: 1.5rem;
-  height: 1.5rem;
-  border-radius: 50%;
-  background: var(--accent);
-  color: var(--accent-text);
-  font-size: 0.6875rem;
-  font-weight: 600;
-}
-
 .account__name {
   font-weight: 500;
 }
@@ -1249,6 +1240,10 @@ button.orgbox__title {
   font-weight: 500;
   white-space: nowrap;
   cursor: pointer;
+  /* A button that happens to be a link (a route rendered as the page's main
+     action) must not be underlined: the browser underlines every anchor, and a
+     main action with a line through it reads as a text link, not a button. */
+  text-decoration: none;
 }
 
 .button:hover {
@@ -1263,6 +1258,10 @@ button.orgbox__title {
 .button--primary {
   background: var(--accent);
   color: var(--accent-text);
+  /* The weight of a heading. At 500 the page's main action sits at the same
+     visual level as every quiet button around it and stops reading as the main
+     one - the accent colour alone is too weak a signal on a busy header. */
+  font-weight: 600;
 }
 
 .button--primary:hover {
@@ -1453,6 +1452,16 @@ textarea {
 .field__error {
   color: var(--danger);
   font-size: 0.75rem;
+}
+
+/* A line under a control that says what it will not do: a field that quietly
+   cannot take effect is worse than one that admits it. Lighter than the field's
+   own label, which is already muted and weighted. */
+.field__note {
+  color: var(--text-faint);
+  font-size: 0.6875rem;
+  font-weight: 400;
+  text-wrap: pretty;
 }
 
 /* The listbox (stage 1.3): a button shaped like the input it replaces, and a
@@ -1648,13 +1657,74 @@ textarea {
   color: var(--text);
 }
 
-/* The shared chevron points down; the month arrows need left and right. */
+/* The shared chevron points down; the month arrows need left and right.
+   A down-pointing chevron turned a quarter turn clockwise points left, so the
+   arrow on the right (next month) is the negative one. They were the other way
+   round, which drew ">" on the left and "<" on the right: both buttons were
+   labelled correctly and pointed the wrong way. */
 .datefield__nav-icon {
-  transform: rotate(90deg);
+  transform: rotate(-90deg);
 }
 
 .datefield__nav-icon--prev {
-  transform: rotate(-90deg);
+  transform: rotate(90deg);
+}
+
+/* The month and the year in the title are how somebody reaches a date that is
+   not in this month, so they are buttons that look like the text they are. */
+.datefield__title-button {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.datefield__title-button:hover {
+  color: var(--link);
+}
+
+.datefield__title-button + .datefield__title-button {
+  margin-inline-start: var(--space-2);
+}
+
+/* Months and years share one page: three rows of four, twelve cells. */
+.datefield__pick {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--space-1);
+}
+
+.datefield__cell {
+  display: grid;
+  place-items: center;
+  min-height: 2rem;
+  border: 0;
+  border-radius: var(--radius);
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.8125rem;
+  text-transform: capitalize;
+  cursor: pointer;
+}
+
+.datefield__year {
+  /* A year is four digits and a month is three letters: without a smaller size
+     the numbers overflow the cell the months sit comfortably in. */
+  font-size: 0.75rem;
+}
+
+.datefield__cell:hover {
+  background: var(--nav-hover);
+}
+
+.datefield__cell--selected,
+.datefield__cell--selected:hover {
+  background: var(--calendar);
+  color: var(--calendar-ink);
+  font-weight: 600;
 }
 
 .datefield__weekdays,
@@ -1877,6 +1947,19 @@ textarea {
 .page-header__back-icon {
   align-self: center;
   transform: rotate(90deg);
+}
+
+/* The other way-back arrangement: the control on a line of its own, the title
+ * under it (stage 2, N.0). The gap is stated here because nothing else states
+ * it: `h1` resets its top margin and the button resets its bottom one, so the
+ * two boxes met with 0px between them and the title looked glued to the
+ * control. `.page-header` needs no such rule - it is a flex row whose own gap
+ * already separates the back control from the title beside it. */
+.page-title {
+  display: grid;
+  gap: var(--space-3);
+  justify-items: start;
+  margin-bottom: var(--space-4);
 }
 
 .narrow {
@@ -2485,22 +2568,6 @@ textarea {
   background: var(--surface);
   border: 1px solid var(--surface-02-border);
   border-radius: var(--radius-md);
-}
-
-/* The member row's picture in the staff list. The reusable `Avatar` component has
-   its own rules above; naming `.avatar` here as well used to win by being later in
-   the file and silently shrank every avatar to this size. */
-.member__avatar {
-  display: grid;
-  place-items: center;
-  width: 1.75rem;
-  height: 1.75rem;
-  flex-shrink: 0;
-  border-radius: 50%;
-  background: var(--nav-active);
-  color: var(--text);
-  font-size: 0.6875rem;
-  font-weight: 600;
 }
 
 .member__identity {

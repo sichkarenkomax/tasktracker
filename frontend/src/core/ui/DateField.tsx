@@ -84,6 +84,10 @@ const EDGE_GAP = 8
  *  months as the cursor moves from one to the next. */
 const WEEKS = 6
 const DAYS_IN_WEEK = 7
+/** Months and years are both picked from a twelve-cell page: three rows of four,
+ *  the shape a phone calendar uses. */
+const PICK_PAGE = 12
+const PICK_COLUMNS = 4
 
 export function DateField(props: DateFieldProps) {
   const { locale, t } = useI18n()
@@ -91,6 +95,10 @@ export function DateField(props: DateFieldProps) {
   const [open, setOpen] = useState(false)
   const [view, setView] = useState<DateParts>(() => startOfMonth(selectedParts(props) ?? today()))
   const [cursor, setCursor] = useState<string>(() => isoOf(selectedParts(props) ?? today()))
+  /** Which of the three grids the popup shows. Days are where picking starts;
+   *  the month and the year in the title are how somebody gets to a far-off date
+   *  without clicking an arrow a few hundred times. */
+  const [panel, setPanel] = useState<'days' | 'months' | 'years'>('days')
   const [position, setPosition] = useState<MenuPosition | null>(null)
 // The clock is held apart from the value so that typing "1" on the way to "18"
 // does not store 01:00 and ask the server to save it. The ref mirrors it because
@@ -102,6 +110,8 @@ export function DateField(props: DateFieldProps) {
   const triggerRef = useRef<HTMLButtonElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
   const dayRefs = useRef(new Map<string, HTMLButtonElement>())
+  const monthRefs = useRef(new Map<number, HTMLButtonElement>())
+  const yearRefs = useRef(new Map<number, HTMLButtonElement>())
   const restoreFocusRef = useRef(false)
   const reactId = useId()
 
@@ -118,10 +128,22 @@ export function DateField(props: DateFieldProps) {
     () => buildMonth(view.y, view.m, locale),
     [view.y, view.m, locale],
   )
-  const title = useMemo(
-    () => new Intl.DateTimeFormat(locale, { month: 'long', year: 'numeric' }).format(new Date(view.y, view.m, 1)),
+  // The title is two buttons rather than one piece of text: the month and the
+  // year are the two things a person reaches for when the date they want is not
+  // in this month.
+  const monthNames = useMemo(
+    () =>
+      Array.from({ length: 12 }, (_, index) =>
+        new Intl.DateTimeFormat(locale, { month: 'short' }).format(new Date(2026, index, 1)).replace('.', ''),
+      ),
+    [locale],
+  )
+  const monthTitle = useMemo(
+    () => new Intl.DateTimeFormat(locale, { month: 'long' }).format(new Date(view.y, view.m, 1)),
     [locale, view.y, view.m],
   )
+  /** The twelve years on the page: the anchor year rounded down to a page edge. */
+  const yearPageStart = Math.floor(view.y / PICK_PAGE) * PICK_PAGE
   const triggerText = selected
     ? withTime
       ? `${formatDate(selected, locale)}, ${pad2(clock.h)}:${pad2(clock.m)}`
@@ -132,6 +154,7 @@ export function DateField(props: DateFieldProps) {
     const from = selected ?? today()
     setView(startOfMonth(from))
     setCursor(isoOf(from))
+    setPanel('days')
     // Re-read the clock from the value: it may have been edited and saved while
     // the popup was shut.
     setClock(clockOf(props))
@@ -183,15 +206,67 @@ export function DateField(props: DateFieldProps) {
     moveCursor({ y: next.getFullYear(), m: next.getMonth(), d: Math.min(here.d, daysInMonth(next.getFullYear(), next.getMonth())) })
   }
 
+  /** The month page's arrows walk years, so the month underneath is kept. */
+  function shiftYear(delta: number) {
+    setView((current) => ({ ...current, y: current.y + delta }))
+  }
+
+  /** The year page's arrows walk whole pages of twelve, keeping the year in
+   *  sight on the page it was on. */
+  function shiftYearPage(delta: number) {
+    setView((current) => {
+      const start = Math.floor(current.y / PICK_PAGE) * PICK_PAGE
+      return { ...current, y: start + delta * PICK_PAGE + (current.y - start) }
+    })
+  }
+
+  /** Month chosen from the month page: back to the days, on that month. */
+  function chooseMonth(month: number) {
+    const here = parseIso(cursor) ?? today()
+    moveCursor({ y: view.y, m: month, d: Math.min(here.d, daysInMonth(view.y, month)) })
+    setPanel('days')
+  }
+
+  /** Year chosen from the year page: one step down to the months of that year. */
+  function chooseYear(year: number) {
+    setView((current) => ({ ...current, y: year }))
+    setPanel('months')
+  }
+
   function onKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
-    // The grid answers arrows and PageUp/PageDown. The clock columns answer the
-    // same keys themselves, so a key coming from there belongs to the column it
-    // was pressed in - without this guard, arrow keys inside the hour box moved
+    // Each grid answers arrows and PageUp/PageDown for itself, and the clock
+    // columns answer the same keys themselves, so a key coming from one of those
+    // belongs to it - without these guards, arrow keys inside the hour box moved
     // the *date* while the hour sat still.
     const target = event.target as HTMLElement
-    const onGrid = target.classList?.contains('datefield__day') === true
+    const onDay = target.classList?.contains('datefield__day') === true
+    const onMonth = target.classList?.contains('datefield__month') === true
+    const onYear = target.classList?.contains('datefield__year') === true
 
-    if (!onGrid && event.key !== 'Escape') return
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      close(true)
+      return
+    }
+
+    // Arrows walk a twelve-cell page by DOM focus, the way the clock columns do.
+    // Enter and Space need nothing here: activating a button is the browser's
+    // own job, so the click handler runs.
+    if (onMonth || onYear) {
+      if (stepFocus(event, PICK_COLUMNS)) return
+      if (event.key === 'PageUp') {
+        event.preventDefault()
+        if (onMonth) shiftYear(-1)
+        else shiftYearPage(-1)
+      } else if (event.key === 'PageDown') {
+        event.preventDefault()
+        if (onMonth) shiftYear(1)
+        else shiftYearPage(1)
+      }
+      return
+    }
+
+    if (!onDay) return
 
     const here = parseIso(cursor) ?? today()
     switch (event.key) {
@@ -230,19 +305,15 @@ export function DateField(props: DateFieldProps) {
       case 'Enter':
       case ' ': {
         event.preventDefault()
-        const target = parseIso(cursor)
-        if (target && !isBlocked(target)) pick(target)
+        const picked = parseIso(cursor)
+        if (picked && !isBlocked(picked)) pick(picked)
         break
       }
-      case 'Escape':
-        event.preventDefault()
-        close(true)
-        break
       case 'Tab':
         // Tabbing out of the popup folds it, but a Tab *inside* it - from the
         // hours to the minutes - must not: the reader is on their way to the
         // control they wanted, not out of the control they opened.
-        if (onGrid) setOpen(false)
+        setOpen(false)
         break
       default:
         break
@@ -270,8 +341,16 @@ export function DateField(props: DateFieldProps) {
   // measured position is what makes the keyboard arrive inside the grid.
   useLayoutEffect(() => {
     if (!open || position === null) return
+    if (panel === 'months') {
+      monthRefs.current.get(view.m)?.focus()
+      return
+    }
+    if (panel === 'years') {
+      yearRefs.current.get(view.y)?.focus()
+      return
+    }
     dayRefs.current.get(cursor)?.focus()
-  }, [open, position, cursor])
+  }, [open, position, panel, cursor, view.y, view.m])
 
   // Focus goes back to the trigger once the popup is gone, so a keyboard user who
 // picked a day lands on the control they picked it in rather than at the top of
@@ -314,6 +393,7 @@ useLayoutEffect(() => {
     if (open || !selected) return
     setView(startOfMonth(selected))
     setCursor(isoOf(selected))
+    setPanel('days')
   }, [open, selected])
 
   // Clicking away closes. Pointer events rather than click, so the decision
@@ -332,6 +412,69 @@ useLayoutEffect(() => {
   }, [open])
 
   const todayIso = isoOf(today())
+
+  /** The arrows and the title follow the panel: months on the day grid, years on
+   *  the month grid, twelve-year pages on the year grid. */
+  const head = (() => {
+    const arrow = (delta: () => void, label: string, previous: boolean) => (
+      <button type="button" className="datefield__nav" aria-label={label} onClick={delta}>
+        <Icon
+          name="chevron"
+          size={16}
+          className={`datefield__nav-icon${previous ? ' datefield__nav-icon--prev' : ''}`}
+        />
+      </button>
+    )
+
+    if (panel === 'years') {
+      return (
+        <>
+          {arrow(() => shiftYearPage(-1), t('date.prevYears'), true)}
+          <span id={titleId} className="datefield__title">
+            {yearPageStart}–{yearPageStart + PICK_PAGE - 1}
+          </span>
+          {arrow(() => shiftYearPage(1), t('date.nextYears'), false)}
+        </>
+      )
+    }
+
+    if (panel === 'months') {
+      return (
+        <>
+          {arrow(() => shiftYear(-1), t('date.prevYear'), true)}
+          <span id={titleId} className="datefield__title">
+            {view.y}
+          </span>
+          {arrow(() => shiftYear(1), t('date.nextYear'), false)}
+        </>
+      )
+    }
+
+    return (
+      <>
+        {arrow(() => shiftMonth(-1), t('date.prevMonth'), true)}
+        <span id={titleId} className="datefield__title">
+          <button
+            type="button"
+            className="datefield__title-button"
+            aria-label={t('date.pickMonth')}
+            onClick={() => setPanel('months')}
+          >
+            {monthTitle}
+          </button>
+          <button
+            type="button"
+            className="datefield__title-button"
+            aria-label={t('date.pickYear')}
+            onClick={() => setPanel('years')}
+          >
+            {view.y}
+          </button>
+        </span>
+        {arrow(() => shiftMonth(1), t('date.nextMonth'), false)}
+      </>
+    )
+  })()
 
   const menu = open
     ? createPortal(
@@ -354,96 +497,136 @@ useLayoutEffect(() => {
           }
           onKeyDown={onKeyDown}
         >
-          <div className="datefield__head">
-            <button
-              type="button"
-              className="datefield__nav"
-              aria-label={t('date.prevMonth')}
-              onClick={() => shiftMonth(-1)}
-            >
-              <Icon name="chevron" size={16} className="datefield__nav-icon datefield__nav-icon--prev" />
-            </button>
-            <span id={titleId} className="datefield__title">
-              {title}
-            </span>
-            <button
-              type="button"
-              className="datefield__nav"
-              aria-label={t('date.nextMonth')}
-              onClick={() => shiftMonth(1)}
-            >
-              <Icon name="chevron" size={16} className="datefield__nav-icon" />
-            </button>
-          </div>
+          <div className="datefield__head">{head}</div>
 
-          <div className="datefield__weekdays" aria-hidden="true">
-            {months.weekdays.map((weekday) => (
-              <span key={weekday} className="datefield__weekday">
-                {weekday}
-              </span>
-            ))}
-          </div>
+          {panel === 'months' ? (
+            <div role="grid" aria-label={t('date.pickMonth')} className="datefield__pick">
+              {monthNames.map((name, month) => (
+                <button
+                  key={month}
+                  ref={(node) => {
+                    if (node) monthRefs.current.set(month, node)
+                    else monthRefs.current.delete(month)
+                  }}
+                  type="button"
+                  role="gridcell"
+                  tabIndex={month === view.m ? 0 : -1}
+                  aria-selected={month === view.m}
+                  className={[
+                    'datefield__cell',
+                    'datefield__month',
+                    month === view.m ? 'datefield__cell--selected' : '',
+                  ]
+                    .filter(Boolean)
+                    .join(' ')}
+                  onClick={() => chooseMonth(month)}
+                >
+                  {name}
+                </button>
+              ))}
+            </div>
+          ) : null}
+
+          {panel === 'years' ? (
+            <div role="grid" aria-label={t('date.pickYear')} className="datefield__pick">
+              {Array.from({ length: PICK_PAGE }, (_, offset) => yearPageStart + offset).map((year) => (
+                <button
+                  key={year}
+                  ref={(node) => {
+                    if (node) yearRefs.current.set(year, node)
+                    else yearRefs.current.delete(year)
+                  }}
+                  type="button"
+                  role="gridcell"
+                  tabIndex={year === view.y ? 0 : -1}
+                  aria-selected={year === view.y}
+                  className={[
+                    'datefield__cell',
+                    'datefield__year',
+                    year === view.y ? 'datefield__cell--selected' : '',
+                  ]
+                    .filter(Boolean)
+                    .join(' ')}
+                  onClick={() => chooseYear(year)}
+                >
+                  {year}
+                </button>
+              ))}
+            </div>
+          ) : null}
+
+          {panel === 'days' ? (
+            <>
+              <div className="datefield__weekdays" aria-hidden="true">
+                {months.weekdays.map((weekday) => (
+                  <span key={weekday} className="datefield__weekday">
+                    {weekday}
+                  </span>
+                ))}
+              </div>
 
           <div role="grid" className="datefield__grid">
-            {months.weeks.map((week) => (
-              <div role="row" key={week[0]?.iso ?? 'week'} className="datefield__week">
-                {week.map((day) => {
-                  const blocked = isBlocked(day.parts)
-                  return (
-                    <button
-                      key={day.iso}
-                      ref={(node) => {
-                        if (node) dayRefs.current.set(day.iso, node)
-                        else dayRefs.current.delete(day.iso)
-                      }}
-                      type="button"
-                      role="gridcell"
-                      tabIndex={day.iso === cursor ? 0 : -1}
-                      aria-selected={day.iso === props.value}
-                      aria-current={day.iso === todayIso ? 'date' : undefined}
-                      aria-disabled={blocked || undefined}
-                      className={[
-                        'datefield__day',
-                        !day.inMonth ? 'datefield__day--outside' : '',
-                        day.iso === todayIso ? 'datefield__day--today' : '',
-                        day.iso === props.value ? 'datefield__day--selected' : '',
-                      ]
-                        .filter(Boolean)
-                        .join(' ')}
-                      onClick={() => {
-                        if (!blocked) pick(day.parts)
-                      }}
-                    >
-                      {day.parts.d}
-                    </button>
-                  )
-                })}
+                {months.weeks.map((week) => (
+                  <div role="row" key={week[0]?.iso ?? 'week'} className="datefield__week">
+                    {week.map((day) => {
+                      const blocked = isBlocked(day.parts)
+                      return (
+                        <button
+                          key={day.iso}
+                          ref={(node) => {
+                            if (node) dayRefs.current.set(day.iso, node)
+                            else dayRefs.current.delete(day.iso)
+                          }}
+                          type="button"
+                          role="gridcell"
+                          tabIndex={day.iso === cursor ? 0 : -1}
+                          aria-selected={day.iso === props.value}
+                          aria-current={day.iso === todayIso ? 'date' : undefined}
+                          aria-disabled={blocked || undefined}
+                          className={[
+                            'datefield__day',
+                            !day.inMonth ? 'datefield__day--outside' : '',
+                            day.iso === todayIso ? 'datefield__day--today' : '',
+                            day.iso === props.value ? 'datefield__day--selected' : '',
+                          ]
+                            .filter(Boolean)
+                            .join(' ')}
+                          onClick={() => {
+                            if (!blocked) pick(day.parts)
+                          }}
+                        >
+                          {day.parts.d}
+                        </button>
+                      )
+                    })}
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
 
-          {withTime ? (
-            /* Two scrolling columns, hours beside minutes - the shape the native
-               picker used and the one people already know. Native controls are
-               ruled out: this picker exists because the browser draws its own and
-               will not be themed, and `input[type=time]` is drawn by the same
-               hand. */
-            <div className="datefield__clock">
-              <ClockColumn
-                id={hoursId}
-                label={t('date.hour')}
-                values={HOURS}
-                selected={clock.h}
-                onPick={(value) => commitClock({ ...clockRef.current, h: value })}
-              />
-              <ClockColumn
-                id={minutesId}
-                label={t('date.minute')}
-                values={minutesFor(clock.m)}
-                selected={clock.m}
-                onPick={(value) => commitClock({ ...clockRef.current, m: value })}
-              />
-            </div>
+              {withTime ? (
+                /* Two scrolling columns, hours beside minutes - the shape the native
+                   picker used and the one people already know. Native controls are
+                   ruled out: this picker exists because the browser draws its own and
+                   will not be themed, and `input[type=time]` is drawn by the same
+                   hand. */
+                <div className="datefield__clock">
+                  <ClockColumn
+                    id={hoursId}
+                    label={t('date.hour')}
+                    values={HOURS}
+                    selected={clock.h}
+                    onPick={(value) => commitClock({ ...clockRef.current, h: value })}
+                  />
+                  <ClockColumn
+                    id={minutesId}
+                    label={t('date.minute')}
+                    values={minutesFor(clock.m)}
+                    selected={clock.m}
+                    onPick={(value) => commitClock({ ...clockRef.current, m: value })}
+                  />
+                </div>
+              ) : null}
+            </>
           ) : null}
 
           <div className="datefield__foot">
@@ -501,6 +684,39 @@ useLayoutEffect(() => {
       {menu}
     </>
   )
+}
+
+/**
+ * Arrow keys walk a grid of buttons by moving DOM focus, the way the clock
+ * columns already do. Returns whether the key was one of them, so the caller can
+ * leave the rest of the keyboard alone.
+ *
+ * The focus anchor stays the value, not the focus: walking over a month must not
+ * change anything, which is why this moves focus instead of state.
+ */
+function stepFocus(event: React.KeyboardEvent, columns: number): boolean {
+  const keys = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Home', 'End']
+  if (!keys.includes(event.key)) return false
+  event.preventDefault()
+  event.stopPropagation()
+  const items = [...((event.target as HTMLElement).closest('[role="grid"]')?.querySelectorAll('button') ?? [])]
+  const at = items.indexOf(document.activeElement as HTMLButtonElement)
+  const step =
+    event.key === 'ArrowUp'
+      ? -columns
+      : event.key === 'ArrowDown'
+        ? columns
+        : event.key === 'ArrowLeft'
+          ? -1
+          : 1
+  const next =
+    event.key === 'Home'
+      ? 0
+      : event.key === 'End'
+        ? items.length - 1
+        : Math.min(items.length - 1, Math.max(0, (at < 0 ? 0 : at) + step))
+  items[next]?.focus()
+  return true
 }
 
 /**

@@ -9,6 +9,8 @@
  * inside the provider - a unit test, a storybook - can then pass its own stub
  * instead of failing on a missing context.
  */
+import { useSyncExternalStore } from 'react'
+
 import type { Translate } from './i18n'
 
 const DATE_TIME_FORMAT: Intl.DateTimeFormatOptions = { dateStyle: 'medium', timeStyle: 'short' }
@@ -32,6 +34,7 @@ export type DateFormat = (typeof DATE_FORMATS)[number]
 const DEFAULT_FORMAT: DateFormat = 'YYYY-MM-DD'
 
 let activeFormat: DateFormat = DEFAULT_FORMAT
+const listeners = new Set<() => void>()
 
 /**
  * The format dates are rendered in, set once the settings are known.
@@ -40,15 +43,40 @@ let activeFormat: DateFormat = DEFAULT_FORMAT
  * `formatDate(value)` directly, and threading a format through forty of them is
  * a change with no upside: the value is a preference, read the same way the
  * language and the theme are read from one place.
+ *
+ * The cost of that choice is that writing the variable says nothing to React, so
+ * a new format stayed invisible until something unrelated re-rendered the page -
+ * which is why changing it appeared to work only after a save button. Hence the
+ * listeners: the value is still read synchronously from anywhere, and the shell
+ * subscribes once so that a change reaches the screen.
  */
 export function setDateFormat(format: string | null | undefined): void {
   activeFormat = (DATE_FORMATS as ReadonlyArray<string>).includes(format ?? '')
     ? (format as DateFormat)
     : DEFAULT_FORMAT
+  for (const listener of listeners) listener()
 }
 
 export function getDateFormat(): DateFormat {
   return activeFormat
+}
+
+export function subscribeDateFormat(listener: () => void): () => void {
+  listeners.add(listener)
+  return () => {
+    listeners.delete(listener)
+  }
+}
+
+/**
+ * Re-renders the caller when the format changes.
+ *
+ * For the one component that has to redraw everything else - the shell. Screens
+ * need nothing of this: they call `formatDate` while rendering, and the shell's
+ * own re-render brings them along.
+ */
+export function useDateFormat(): DateFormat {
+  return useSyncExternalStore(subscribeDateFormat, getDateFormat, getDateFormat)
 }
 
 /** The date as the reader asked for it, from its local calendar parts. */

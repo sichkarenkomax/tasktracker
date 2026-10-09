@@ -32,6 +32,9 @@ export interface Member extends Membership {
   username: string
   first_name: string | null
   last_name: string | null
+  /** The API sends it inside the nested account (stage 2.3); it used to be dropped
+   *  here, so every list drew a letter while the header showed a photo. */
+  avatar_url: string | null
 }
 
 interface MembershipWithUser extends Membership {
@@ -41,7 +44,29 @@ interface MembershipWithUser extends Membership {
     username: string
     first_name: string | null
     last_name: string | null
+    avatar_url: string | null
   } | null
+}
+
+/**
+ * The membership row plus the account behind it, as one `Member`.
+ *
+ * It is a function rather than an inline map because two callers need it - the
+ * member list and the org chart, which reads the same people out of the
+ * structure snapshot. When it was written twice, the chart's copy silently
+ * lacked every field the list had gained (`avatar_url`, stage 2.3).
+ */
+export function flattenMember(row: MembershipWithUser): Member {
+  return {
+    user_id: row.user_id,
+    role: row.role,
+    joined_at: row.joined_at,
+    email: row.user?.email ?? '',
+    username: row.user?.username ?? '',
+    first_name: row.user?.first_name ?? null,
+    last_name: row.user?.last_name ?? null,
+    avatar_url: row.user?.avatar_url ?? null,
+  }
 }
 
 export const organizationsApi = {
@@ -56,15 +81,7 @@ export const organizationsApi = {
   },
   async members(id: string): Promise<Member[]> {
     const rows = await api.get<MembershipWithUser[]>(`/organizations/${id}/members`)
-    return rows.map((row) => ({
-      user_id: row.user_id,
-      role: row.role,
-      joined_at: row.joined_at,
-      email: row.user?.email ?? '',
-      username: row.user?.username ?? '',
-      first_name: row.user?.first_name ?? null,
-      last_name: row.user?.last_name ?? null,
-    }))
+    return rows.map(flattenMember)
   },
   addMember(id: string, email: string, role: OrganizationRole) {
     return api.post<Membership>(`/organizations/${id}/members`, { email, role })

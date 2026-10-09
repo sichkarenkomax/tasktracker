@@ -368,6 +368,8 @@ export const ru: Record<TranslationKey, string> = {
   'settings.dateFormatPortal': 'Как в портале',
   'settings.dateFormatHint':
     'Как записываются даты в этом портале. Каждый может выбрать свой формат в персональных настройках.',
+  'settings.dateFormatOverridden':
+    'У вас выбран личный формат даты — он важнее формата портала, поэтому здесь его смена ничего не изменит. Откатить это можно в персональных настройках.',
   'dateFormat.YYYY-MM-DD': '2026-10-08 (ISO)',
   'dateFormat.DD.MM.YYYY': '08.10.2026',
   'dateFormat.MM/DD/YYYY': '10/08/2026',
@@ -394,6 +396,12 @@ export const ru: Record<TranslationKey, string> = {
   'date.clear': 'Очистить',
   'date.prevMonth': 'Предыдущий месяц',
   'date.nextMonth': 'Следующий месяц',
+  'date.pickMonth': 'Выбрать месяц',
+  'date.pickYear': 'Выбрать год',
+  'date.prevYear': 'Предыдущий год',
+  'date.nextYear': 'Следующий год',
+  'date.prevYears': 'Более ранние годы',
+  'date.nextYears': 'Более поздние годы',
   'date.hour': 'Час',
   'date.minute': 'Минута',
 

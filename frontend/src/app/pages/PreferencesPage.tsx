@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 
-import { DATE_FORMATS, getDateFormat, setDateFormat } from '../../core/format'
+import { DATE_FORMATS, setDateFormat } from '../../core/format'
 import { useAsync, useMutation } from '../../core/hooks/useAsync'
 import { useI18n, LOCALES } from '../../core/i18n'
 import type { Locale } from '../../core/i18n'
@@ -38,7 +38,6 @@ export function PreferencesPage() {
   const organizationId = current?.id ?? null
 
   const [theme, chooseTheme] = useState<Theme>(getTheme)
-  const [dateFormat, setFormat] = useState<string>(getDateFormat())
 
   const personal = useAsync(
     () => (organizationId ? personalSettingsApi.read(organizationId) : Promise.resolve(null)),
@@ -59,6 +58,14 @@ export function PreferencesPage() {
   ]
 
   const storedFormat = personal.data?.stored?.date_format as string | undefined
+  const portalFormat = personal.data?.values?.date_format as string | undefined
+
+  // The control shows what is stored, not what the module happened to hold when
+  // the screen mounted: a personal format arrives a moment after the first
+  // render, so a value captured at mount is the default wearing the stored
+  // format's clothes. State holds only the change just made.
+  const [dateFormatDraft, setDateFormatDraft] = useState<string | null>(null)
+  const dateFormat = dateFormatDraft ?? storedFormat ?? FOLLOW_PORTAL
 
   return (
     <section className="narrow">
@@ -108,20 +115,20 @@ export function PreferencesPage() {
               options={formats}
               onChange={(next) => {
                 if (next === null) return
-                setFormat(next)
+                setDateFormatDraft(next)
                 // Applied at once: a date format is text, and waiting for a save
                 // button to make the numbers change would only be confusing. The
                 // server is told afterwards, and a failure says so below.
-                if (next === FOLLOW_PORTAL) {
-                  // Clearing the override leaves the module holding the portal's
-                  // format, which the reader can see by looking at the screen.
-                  setDateFormat(personal.data?.values?.date_format as string | undefined)
-                } else {
-                  setDateFormat(next)
-                }
-                if (storedFormat !== next) {
-                  void saveDateFormat.run({ date_format: next === FOLLOW_PORTAL ? null : next })
-                }
+                setDateFormat(next === FOLLOW_PORTAL ? portalFormat : next)
+                void saveDateFormat
+                  .run({ date_format: next === FOLLOW_PORTAL ? null : next })
+                  .then((done) => {
+                    if (done === null) return
+                    // Re-read rather than trust what is on screen: the stored value
+                    // the control falls back to is the one this very save replaced.
+                    setDateFormatDraft(null)
+                    personal.reload()
+                  })
               }}
             />
         </label>

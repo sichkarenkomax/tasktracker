@@ -65,12 +65,14 @@ function Create() {
 
   return (
     <section className="narrow">
-      <button type="button" className="button button--ghost" onClick={() => navigate(listPath)}>
-        <Icon name="chevron" size={14} className="back-chevron" />
-        {project.data?.name ?? t('tasks.allTasks')}
-      </button>
+      <header className="page-title">
+        <button type="button" className="button button--ghost" onClick={() => navigate(listPath)}>
+          <Icon name="chevron" size={14} className="back-chevron" />
+          {project.data?.name ?? t('tasks.allTasks')}
+        </button>
 
-      <h1>{t('tasks.newTask')}</h1>
+        <h1>{t('tasks.newTask')}</h1>
+      </header>
       {project.data?.name ? <p className="muted">{project.data.name}</p> : null}
 
       <TaskCreateForm

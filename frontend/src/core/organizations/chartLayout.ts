@@ -18,6 +18,9 @@ export interface ChartNode {
   kind: 'person'
   userId: string
   name: string
+  /** Carried with the node so the box can draw the shared `Avatar` instead of a
+   *  letter: the chart already holds the roster, the box does not. */
+  avatarUrl: string | null
   title: string | null
   departmentId: string | null
   positionId: string | null
@@ -80,6 +83,7 @@ export function buildChart(
       kind: 'person',
       userId: member.user_id,
       name: nameOf.get(member.user_id) ?? member.username,
+      avatarUrl: member.avatar_url,
       title: placement?.position_id ?? null,
       departmentId: placement?.department_id ?? null,
       positionId: placement?.position_id ?? null,

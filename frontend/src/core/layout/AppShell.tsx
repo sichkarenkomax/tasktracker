@@ -6,6 +6,7 @@ import { useAuth } from '../auth/AuthContext'
 import { Avatar } from '../users/Avatar'
 import { displayName } from '../auth/types'
 import { useAsync } from '../hooks/useAsync'
+import { useDateFormat } from '../format'
 import { useI18n, LOCALES } from '../i18n'
 import type { TranslationKey } from '../i18n'
 import { useOrganization } from '../organizations/OrganizationContext'
@@ -43,6 +44,13 @@ import type { NavigatorSectionId } from './navigator'
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { status, user, signOut } = useAuth()
   const { t } = useI18n()
+  // The date format is module state so that `formatDate` can stay a plain call
+  // (see core/format.ts). Writing it tells nobody, so the shell subscribes: a
+  // format picked on a settings screen has to redraw the dates on this one
+  // straight away, not after whatever update happens to come next. The value is
+  // not read here - the redraw is the point, and `<Outlet/>` below re-renders
+  // every page with it.
+  useDateFormat()
   const [navOpen, setNavOpen] = useState(false)
   const [navCollapsed, setNavCollapsed] = useState(() => {
     try {
@@ -600,7 +608,7 @@ function AccountMenu({ onSignOut }: { onSignOut: () => Promise<void> }) {
         aria-expanded={open}
         onClick={() => setOpen((value) => !value)}
       >
-<Avatar src={user.avatar_url} name={displayName(user)} size="sm" className="account__avatar" />
+          <Avatar src={user.avatar_url} name={displayName(user)} size="sm" />
           <span className="account__name">{displayName(user)}</span>
         <Icon name="chevron" size={14} />
       </button>

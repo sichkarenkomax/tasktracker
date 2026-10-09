@@ -372,6 +372,8 @@ export const en = {
   'settings.dateFormatPortal': 'As the portal writes it',
   'settings.dateFormatHint':
     'How dates are written in this portal. Anyone can pick a different one for themselves in their personal settings.',
+  'settings.dateFormatOverridden':
+    'You have a personal date format of your own, and it outranks the portal\'s - so changing it here will not change anything for you. Undo that in your personal settings.',
   'dateFormat.YYYY-MM-DD': '2026-10-08 (ISO)',
   'dateFormat.DD.MM.YYYY': '08.10.2026',
   'dateFormat.MM/DD/YYYY': '10/08/2026',
@@ -398,6 +400,12 @@ export const en = {
   'date.clear': 'Clear',
   'date.prevMonth': 'Previous month',
   'date.nextMonth': 'Next month',
+  'date.pickMonth': 'Choose the month',
+  'date.pickYear': 'Choose the year',
+  'date.prevYear': 'Previous year',
+  'date.nextYear': 'Next year',
+  'date.prevYears': 'Earlier years',
+  'date.nextYears': 'Later years',
   'date.hour': 'Hour',
   'date.minute': 'Minute',
 

@@ -6,7 +6,8 @@ import type { TranslationKey } from '../i18n'
 import { Icon } from '../layout/Icon'
 import { useCapabilities } from '../permissions/capabilities'
 import { Listbox } from '../ui/Listbox'
-import { organizationsApi } from './api'
+import { Avatar } from '../users/Avatar'
+import { flattenMember, organizationsApi } from './api'
 import type { Member, OrgPosition, OrgStructure, Placement } from './api'
 import { departmentSubtree, displayName, flattenDepartments } from './chartLayout'
 import { OrgChart } from './OrgChart'
@@ -221,15 +222,7 @@ function OrgStructure() {
 }
 
 function toMembers(structure: OrgStructure): Member[] {
-  return structure.members.map((row) => ({
-    user_id: row.user_id,
-    role: row.role,
-    joined_at: row.joined_at,
-    email: row.user?.email ?? '',
-    username: row.user?.username ?? '',
-    first_name: row.user?.first_name ?? null,
-    last_name: row.user?.last_name ?? null,
-  }))
+  return structure.members.map(flattenMember)
 }
 
 /**
@@ -776,7 +769,9 @@ function DepartmentInspector({
   return (
     <section className="panel org__inspector">
       <header className="org__inspector-head">
-        <span className="account__avatar" aria-hidden="true">
+        {/* A department is not a person and has no photograph: its mark is its
+            own letter on the quiet surface, not the accent circle people wear. */}
+        <span className="org__department-mark" aria-hidden="true">
           {department.name.charAt(0).toUpperCase()}
         </span>
         <div>
@@ -962,9 +957,7 @@ function PersonInspector({
   return (
     <section className="panel org__inspector">
       <header className="org__inspector-head">
-        <span className="account__avatar" aria-hidden="true">
-          {displayName(member).charAt(0).toUpperCase()}
-        </span>
+        <Avatar src={member.avatar_url} name={displayName(member)} size="sm" />
         <div>
           <strong>{displayName(member)}</strong>
           <span className="muted">{member.email}</span>
