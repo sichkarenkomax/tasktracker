@@ -7,10 +7,15 @@ import { displayName } from '../../core/auth/types'
 import { filesApi } from '../../core/files/api'
 import { prepareAvatar } from '../../core/files/prepare'
 import { formatDateTime } from '../../core/format'
-import { useMutation } from '../../core/hooks/useAsync'
+import { useAsync, useMutation } from '../../core/hooks/useAsync'
 import { useI18n } from '../../core/i18n'
+import { Icon } from '../../core/layout/Icon'
+import { organizationsApi } from '../../core/organizations/api'
 import { useOrganization } from '../../core/organizations/OrganizationContext'
+import { personalSettingsApi } from '../../core/settings/api'
+import { Listbox } from '../../core/ui/Listbox'
 import { Avatar } from '../../core/users/Avatar'
+import { usersApi } from '../../core/users/api'
 
 /**
  * The signed-in person's own account.
@@ -125,6 +130,8 @@ export function UserProfilePage() {
         </dl>
       </section>
 
+      <ContactsPanel />
+
       <section className="panel">
         <h2>{t('auth.changePassword')}</h2>
         <form onSubmit={submitPassword}>
@@ -185,6 +192,186 @@ export function UserProfilePage() {
           {t('nav.signOut')}
         </button>
       </section>
+    </section>
+  )
+}
+
+/**
+ * The contacts a person chooses to publish (stages 2.6 and 2.8).
+ *
+ * Two things in one panel because they are one decision seen from two sides:
+ * the phones and the birthday are what somebody might publish, and the
+ * visibility switch is who they publish it to. The switch hides itself when the
+ * portal has taken the choice away - a control that would be refused on save is
+ * worse than an honest sentence saying the portal decides here.
+ */
+function ContactsPanel() {
+  const { t } = useI18n()
+  const { user, refresh } = useAuth()
+  const { current: organization } = useOrganization()
+  const organizationId = organization?.id ?? null
+  const [draft, setDraft] = useState('')
+  const [error, setError] = useState<string | null>(null)
+
+  const phones = useAsync(() => (organizationId ? usersApi.phones() : Promise.resolve([])), [
+    organizationId,
+  ])
+  const personal = useAsync(
+    () =>
+      organizationId
+        ? personalSettingsApi.read(organizationId)
+        : Promise.resolve(null),
+    [organizationId],
+  )
+  const portal = useAsync(
+    () =>
+      organizationId
+        ? organizationsApi.settings(organizationId)
+        : Promise.resolve(null),
+    [organizationId],
+  )
+
+  const saveBirthday = useMutation<string | null, void>(async (value) => {
+    await usersApi.setBirthday(value)
+    await refresh()
+  })
+
+  const addPhone = useMutation<{ number: string; comment: string | null }, void>(async (input) => {
+    await usersApi.addPhone(input)
+  })
+
+  const deletePhone = useMutation<string, void>(async (phoneId) => {
+    await usersApi.deletePhone(phoneId)
+    phones.reload()
+  })
+
+  const saveVisibility = useMutation<string, void>(async (value) => {
+    if (!organizationId) return
+    await personalSettingsApi.update(organizationId, { contacts_visibility: value })
+  })
+
+  if (!user) return null
+
+  const selfService = portal.data?.values?.contacts_self_service !== false
+  const storedVisibility = personal.data?.stored?.contacts_visibility
+  const visibility = typeof storedVisibility === 'string' ? storedVisibility : 'everyone'
+  const rows = phones.data ?? []
+
+  return (
+    <section className="panel">
+      <h2>{t('profile.contacts')}</h2>
+
+      <div className="fields">
+        <label className="field">
+          <span>{t('profile.birthday')}</span>
+          <input
+            type="date"
+            value={user.birthday ?? ''}
+            max={new Date().toISOString().slice(0, 10)}
+            onChange={(event) => {
+              setError(null)
+              void saveBirthday
+                .run(event.target.value === '' ? null : event.target.value)
+                .then((done) => {
+                  if (done === null) setError(saveBirthday.error)
+                })
+            }}
+          />
+          <span className="muted">{t('profile.birthdayHint')}</span>
+        </label>
+      </div>
+      {error ? (
+        <p className="field__error" role="alert">
+          {error}
+        </p>
+      ) : null}
+
+      <h3>{t('profile.phones')}</h3>
+      {rows.length === 0 ? (
+        <p className="muted">{t('profile.noPhones')}</p>
+      ) : (
+        <ul className="org__list">
+          {rows.map((phone) => (
+            <li key={phone.id}>
+              <span>
+                {phone.number}
+                {phone.comment ? <span className="muted"> — {phone.comment}</span> : null}
+              </span>
+              <button
+                type="button"
+                className="icon-button"
+                aria-label={t('profile.removePhone')}
+                disabled={deletePhone.pending}
+                onClick={() => {
+                  setError(null)
+                  void deletePhone.run(phone.id).then((done) => {
+                    if (done === null) setError(deletePhone.error)
+                  })
+                }}
+              >
+                <Icon name="close" size={13} />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <form
+        className="contacts-add"
+        onSubmit={async (event) => {
+          event.preventDefault()
+          setError(null)
+          const done = await addPhone.run({
+            number: draft.trim(),
+            comment: null,
+          })
+          if (done !== null) {
+            setDraft('')
+            phones.reload()
+          } else {
+            setError(addPhone.error)
+          }
+        }}
+      >
+        <label className="field">
+          <span>{t('profile.addPhone')}</span>
+          <input
+            type="tel"
+            maxLength={32}
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+          />
+        </label>
+        <button type="submit" className="button" disabled={addPhone.pending || draft.trim() === ''}>
+          {t('profile.add')}
+        </button>
+      </form>
+
+      <h3>{t('profile.visibility')}</h3>
+      {selfService ? (
+        <label className="field">
+          <span className="visually-hidden">{t('profile.visibility')}</span>
+          <Listbox<string>
+            value={visibility}
+            options={[
+              { value: 'everyone', label: t('profile.visibilityEveryone') },
+              { value: 'admins', label: t('profile.visibilityAdmins') },
+            ]}
+            onChange={(next) => {
+              if (next === null) return
+              setError(null)
+              void saveVisibility.run(next).then((done) => {
+                if (done !== null) personal.reload()
+                else setError(saveVisibility.error)
+              })
+            }}
+          />
+        </label>
+      ) : (
+        // No switch: the portal has taken this decision away, and saying so is
+        // better than a control whose every save would be refused.
+        <p className="muted">{t('profile.visibilityLocked')}</p>
+      )}
     </section>
   )
 }

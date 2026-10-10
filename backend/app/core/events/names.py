@@ -12,6 +12,7 @@ from typing import Final
 USER_REGISTERED: Final = "user.registered"
 USER_LOGGED_IN: Final = "user.logged_in"
 USER_PROFILE_UPDATED: Final = "user.profile_updated"
+USER_EMAIL_CHANGED: Final = "user.email_changed"
 USER_PASSWORD_CHANGED: Final = "user.password_changed"
 
 ORGANIZATION_CREATED: Final = "organization.created"

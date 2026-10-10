@@ -13,7 +13,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.errors import NotFoundError, ValidationError
+from app.core.errors import NotFoundError, PermissionDeniedError, ValidationError
 from app.core.settings.models import OrganizationSetting, UserSetting
 
 #: Settings a module may declare. `default` is the value used when an
@@ -40,6 +40,23 @@ SETTING_DEFINITIONS: dict[str, dict[str, Any]] = {
     # live in `storage_quotas` rather than here.
     "max_file_size_bytes": {"type": "integer", "default": 0},
     "storage_quota_bytes": {"type": "integer", "default": 0},
+    # Contacts (stage 2.6): who may read another member's email, phones and
+    # birthday. "everyone" is the default because a self-hosted portal is a
+    # company's own installation and the person reading the profile is already
+    # a colleague - a portal that hides the phone number from the team is
+    # unusual rather than safe by default. An installation that wants the
+    # stricter rule turns it on here, and everybody in it obeys.
+    "contacts_visibility": {
+        "type": "string",
+        "default": "everyone",
+        "values": ["everyone", "admins"],
+    },
+    # Whether a person may change their *own* visibility at all. This is the
+    # setting the answer settled on: the portal does not decide what each member
+    # shares, it decides whether they get to decide. With it off, the portal's
+    # own `contacts_visibility` governs and a stored personal value is ignored
+    # rather than silently winning.
+    "contacts_self_service": {"type": "boolean", "default": True},
 }
 
 #: Personal settings, the same contract one level down: a key declared here is a
@@ -74,6 +91,16 @@ PERSONAL_SETTING_DEFINITIONS: dict[str, dict[str, Any]] = {
         "type": "string",
         "default": "full",
         "values": ["full", "names"],
+    },
+    # A person's own answer to "who may see my contacts" (stage 2.6).
+    # Personal, because the portal setting only decides whether they are *allowed*
+    # to answer. As with the date format, the default here is what an untouched
+    # key reads as and only a stored value counts as an opinion - see
+    # `users.visibility.ContactsVisibility`, which is where the two are combined.
+    "contacts_visibility": {
+        "type": "string",
+        "default": "everyone",
+        "values": ["everyone", "admins"],
     },
 }
 
@@ -141,6 +168,17 @@ def personal_definitions() -> dict[str, dict[str, Any]]:
     return dict(PERSONAL_SETTING_DEFINITIONS)
 
 
+#: Personal keys the portal may switch a person's right to set. Maps the
+#: personal key to the organization boolean that governs it: with that setting
+#: off, the portal decides and the personal row is refused on write - not ignored
+#: on read, because a value that was accepted and then quietly disregarded is
+#: worse than one that was never taken. The read side lives in
+#: `users.visibility.ContactsVisibility`, which is where the two are combined.
+PORTAL_CONTROLLED_PERSONAL_SETTINGS: dict[str, str] = {
+    "contacts_visibility": "contacts_self_service",
+}
+
+
 class PersonalSettingsService:
     """One member's settings inside one organization.
 
@@ -201,6 +239,22 @@ class PersonalSettingsService:
                     f"Setting {key} does not accept {value!r}",
                     details={"allowed": accepted},
                 )
+
+        # Keys the portal keeps under its own hand. Refused here rather than in
+        # the one screen that offers them, so no other route can write a value
+        # the portal has just declared nobody may set.
+        portal = await SettingsService(self._session).read(organization_id)
+        blocked = sorted(
+            key
+            for key in values
+            if key in PORTAL_CONTROLLED_PERSONAL_SETTINGS
+            and not portal.get(PORTAL_CONTROLLED_PERSONAL_SETTINGS[key], True)
+        )
+        if blocked:
+            raise PermissionDeniedError(
+                f"This portal does not let members choose {', '.join(blocked)} themselves",
+                details={"settings": blocked},
+            )
 
         stmt = select(UserSetting).where(
             UserSetting.organization_id == organization_id,

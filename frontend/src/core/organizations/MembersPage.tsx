@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 
 import { useAuth } from '../auth/AuthContext'
 import { useAsync, useMutation } from '../hooks/useAsync'
@@ -7,6 +8,7 @@ import type { TranslationKey } from '../i18n'
 import { Icon } from '../layout/Icon'
 import { Listbox } from '../ui/Listbox'
 import { Avatar } from '../users/Avatar'
+import { usersApi } from '../users/api'
 import { organizationsApi } from './api'
 import type { Member, OrganizationRole } from './api'
 import { useOrganizationId } from './OrganizationContext'
@@ -133,6 +135,7 @@ function MemberRow({
   const { t } = useI18n()
   const [error, setError] = useState<string | null>(null)
   const [confirming, setConfirming] = useState(false)
+  const [editingEmail, setEditingEmail] = useState(false)
 
   const changeRole = useMutation<OrganizationRole, void>(async (role) => {
     await organizationsApi.setMemberRole(organizationId, member.user_id, role)
@@ -157,11 +160,18 @@ function MemberRow({
       />
 
       <div className="member__identity">
-        <strong>
-          {member.first_name || member.username}
-          {isMe ? <span className="muted"> ({t('members.you')})</span> : null}
-        </strong>
-        <span className="muted">{member.email}</span>
+        {/* The name is a link to the card behind it (stage 2.6): the list answers
+            "who is in this organization", and the profile answers "who is this
+            and how do I reach them". */}
+        <Link to={`/users/${member.user_id}`}>
+          <strong>
+            {member.first_name || member.username}
+            {isMe ? <span className="muted"> ({t('members.you')})</span> : null}
+          </strong>
+        </Link>
+        <span className="muted">
+          {member.position_title ?? member.email}
+        </span>
       </div>
 
       {mayManage ? (
@@ -214,10 +224,31 @@ function MemberRow({
             </button>
           </span>
         ) : (
-          <button type="button" className="link" onClick={() => setConfirming(true)}>
-            {t('members.remove')}
-          </button>
+          <>
+            {/* Stage 2.7: an administrator fixes somebody's address. The button
+                is here and nowhere else, because "may manage" is the same ceiling
+                the API enforces - offering it to somebody who would be refused
+                would be a control that only teaches the difference between 403s. */}
+            <button type="button" className="link" onClick={() => setEditingEmail(true)}>
+              {t('members.changeEmail')}
+            </button>
+            <button type="button" className="link" onClick={() => setConfirming(true)}>
+              {t('members.remove')}
+            </button>
+          </>
         )
+      ) : null}
+
+      {editingEmail ? (
+        <EmailEditor
+          member={member}
+          organizationId={organizationId}
+          onDone={() => {
+            setEditingEmail(false)
+            onChanged()
+          }}
+          onCancel={() => setEditingEmail(false)}
+        />
       ) : null}
 
       {error ? (
@@ -226,6 +257,70 @@ function MemberRow({
         </span>
       ) : null}
     </li>
+  )
+}
+
+/**
+ * The administrator's editor for somebody else's address (stage 2.7).
+ *
+ * Two things it deliberately does not do: no confirmation round trip, because
+ * nobody sends mail in v1 and the activity feed is the record; and no "send a
+ * letter to the new address" button, because there is no letter. What it does
+ * do is say that the change is visible in the feed - an address that moves
+ * silently is an address a person discovers by failing to get into their own
+ * account.
+ */
+function EmailEditor({
+  member,
+  organizationId,
+  onDone,
+  onCancel,
+}: {
+  member: Member
+  organizationId: string
+  onDone: () => void
+  onCancel: () => void
+}) {
+  const { t } = useI18n()
+  const [email, setEmail] = useState(member.email)
+
+  const save = useMutation<string, void>(async (next) => {
+    await usersApi.setMemberEmail(member.user_id, organizationId, next)
+  })
+
+  return (
+    <form
+      className="member__email"
+      onSubmit={async (event) => {
+        event.preventDefault()
+        const done = await save.run(email.trim())
+        // A refused change (an address already taken) leaves the typed one in
+        // place, so the administrator corrects a typo instead of starting over.
+        if (done !== null) onDone()
+      }}
+    >
+      <label className="field">
+        <span className="visually-hidden">{t('auth.email')}</span>
+        <input
+          autoFocus
+          type="email"
+          required
+          value={email}
+          onChange={(event) => setEmail(event.target.value)}
+        />
+      </label>
+      <button type="submit" className="button" disabled={save.pending}>
+        {save.pending ? t('app.saving') : t('app.save')}
+      </button>
+      <button type="button" className="link" onClick={onCancel}>
+        {t('app.cancel')}
+      </button>
+      {save.error ? (
+        <span className="field__error" role="alert">
+          {save.error}
+        </span>
+      ) : null}
+    </form>
   )
 }
 

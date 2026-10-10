@@ -18,7 +18,7 @@ from app.core.auth.schemas import (
 from app.core.auth.tokens import create_access_token
 from app.core.dependencies import EventBusDep
 from app.core.users.models import User
-from app.core.users.repository import UserRepository
+from app.core.users.repository import UserPhoneRepository, UserRepository
 from app.core.users.service import UserService
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -69,7 +69,7 @@ async def register(
     session: SessionDep,
     bus: EventBusDep,
 ) -> TokenResponse:
-    service = UserService(UserRepository(session), bus)
+    service = UserService(UserRepository(session), bus, UserPhoneRepository(session))
     user = await service.register(
         email=payload.email,
         username=payload.username,
@@ -90,7 +90,7 @@ async def login(
     session: SessionDep,
     bus: EventBusDep,
 ) -> TokenResponse:
-    service = UserService(UserRepository(session), bus)
+    service = UserService(UserRepository(session), bus, UserPhoneRepository(session))
     user = await service.authenticate(login=payload.login, password=payload.password)
     await session.commit()
     return _issue(user, response)
@@ -113,7 +113,7 @@ async def change_password(
     session: SessionDep,
     bus: EventBusDep,
 ) -> None:
-    await UserService(UserRepository(session), bus).change_password(
+    await UserService(UserRepository(session), bus, UserPhoneRepository(session)).change_password(
         user, current=payload.current_password, new=payload.new_password
     )
     await session.commit()

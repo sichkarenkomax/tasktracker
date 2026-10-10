@@ -2648,6 +2648,59 @@ textarea {
   font-size: 0.75rem;
 }
 
+/* The administrator's address editor (stage 2.7). It sits under the row it
+   belongs to rather than replacing it, so a wrong address can be compared with
+   the old one while it is being corrected. */
+.member__email {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+  width: 100%;
+  margin-top: var(--space-2);
+}
+
+.member__email .field {
+  flex: 1 1 16rem;
+  margin: 0;
+}
+
+/* The profile card (stage 2.6): the face and the name are one block, so the
+   name sits on the baseline of the picture rather than floating beside it. */
+.profile-head {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+  margin-bottom: var(--space-3);
+}
+
+.profile-head__identity h1 {
+  margin: 0;
+}
+
+.profile-head__identity p {
+  margin: 0;
+}
+
+.contacts-add {
+  display: flex;
+  gap: var(--space-2);
+  align-items: flex-end;
+  margin-top: var(--space-3);
+}
+
+.contacts-add .field {
+  flex: 1 1 14rem;
+  margin: 0;
+}
+
+/* A checkbox with its sentence beside it, rather than above it. */
+.field.checkbox {
+  flex-direction: row;
+  gap: var(--space-2);
+  align-items: center;
+}
+
 /* --------------------------------------------------- comments/activity --- */
 
 .comments {

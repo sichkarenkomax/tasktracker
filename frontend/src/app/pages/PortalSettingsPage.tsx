@@ -104,6 +104,27 @@ function Settings() {
     [organizationId],
   )
   const hasOwnDateFormat = typeof personal.data?.stored?.date_format === 'string'
+
+  // Contacts (stage 2.6). Two settings, and the order they are explained in is
+  // the order they matter: first whether members may choose at all, then what
+  // happens to everybody who did not choose. Written as one save because a
+  // portal that switched "members may choose" off while leaving its own answer
+  // at "everyone" would be pretending to be strict while staying open.
+  const [contactsDraft, setContactsDraft] = useState<{
+    visibility: string
+    selfService: boolean
+  } | null>(null)
+  const contactsVisibility =
+    contactsDraft?.visibility ??
+    (typeof storedValues?.contacts_visibility === 'string'
+      ? storedValues.contacts_visibility
+      : 'everyone')
+  const contactsSelfService =
+    contactsDraft?.selfService ?? storedValues?.contacts_self_service !== false
+  const saveContacts = useMutation<Record<string, unknown>, void>(async (values) => {
+    if (!organizationId) return
+    await organizationsApi.updateSettings(organizationId, values)
+  })
   const [fileError, setFileError] = useState<string | null>(null)
 
   if (!organization || organizationId === null) return null
@@ -301,6 +322,68 @@ function Settings() {
             <p className="notice notice--error" role="alert">
               {fileError}
             </p>
+          ) : null}
+        </form>
+      </section>
+
+      <section className="panel">
+        <h2>{t('settings.contacts')}</h2>
+        <p className="muted">{t('settings.contactsHint')}</p>
+        <form
+          onSubmit={async (event) => {
+            event.preventDefault()
+            setFileError(null)
+            const done = await saveContacts.run({
+              contacts_visibility: contactsVisibility,
+              contacts_self_service: contactsSelfService,
+            })
+            if (done !== null) {
+              setContactsDraft(null)
+              reload()
+            } else setFileError(saveContacts.error)
+          }}
+        >
+          <div className="fields">
+            <label className="field">
+              <span>{t('settings.contactsVisibility')}</span>
+              <Listbox<string>
+                value={contactsVisibility}
+                options={[
+                  { value: 'everyone', label: t('profile.visibilityEveryone') },
+                  { value: 'admins', label: t('profile.visibilityAdmins') },
+                ]}
+                disabled={!mayEdit}
+                onChange={(next) => {
+                  if (next === null) return
+                  setContactsDraft({ visibility: next, selfService: contactsSelfService })
+                }}
+              />
+            </label>
+            <label className="field checkbox">
+              <input
+                type="checkbox"
+                checked={contactsSelfService}
+                disabled={!mayEdit}
+                onChange={(event) =>
+                  setContactsDraft({
+                    visibility: contactsVisibility,
+                    selfService: event.target.checked,
+                  })
+                }
+              />
+              <span>{t('settings.contactsSelfService')}</span>
+            </label>
+          </div>
+          {mayEdit ? (
+            <div className="create-form__actions">
+              <button
+                type="submit"
+                className="button button--primary"
+                disabled={saveContacts.pending}
+              >
+                {saveContacts.pending ? t('app.saving') : t('app.save')}
+              </button>
+            </div>
           ) : null}
         </form>
       </section>

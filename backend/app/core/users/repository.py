@@ -12,7 +12,7 @@ from uuid import UUID
 from sqlalchemy import Select, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.users.models import User
+from app.core.users.models import User, UserPhone
 from app.database.helpers import count, fetch_all, fetch_one
 
 
@@ -74,3 +74,48 @@ class UserRepository:
             )
         statement = statement.order_by(User.created_at.desc()).limit(limit).offset(offset)
         return await fetch_all(self._session, statement)
+
+
+class UserPhoneRepository:
+    """The phones of one person.
+
+    Separate from :class:`UserRepository` because the phone table has a
+    different owner: adding a number is not an account operation, and every
+    route that edits one needs nothing from the account table but the id.
+    """
+
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def list_for(self, user_id: UUID) -> list[UserPhone]:
+        """This person's numbers, oldest first.
+
+        The order is the creation order and nothing more - the screen shows them
+        in the order they were written, because a person states which number is
+        the main one by writing it first.
+        """
+        statement = (
+            select(UserPhone)
+            .where(UserPhone.user_id == user_id)
+            .order_by(UserPhone.created_at, UserPhone.id)
+        )
+        return await fetch_all(self._session, statement)
+
+    async def get_for_user(self, *, phone_id: UUID, user_id: UUID) -> UserPhone | None:
+        """One number, but only somebody's own.
+
+        The user id is part of the lookup rather than checked afterwards so a
+        guess at somebody else's phone id returns nothing instead of a row the
+        caller then has to remember to refuse.
+        """
+        statement = select(UserPhone).where(UserPhone.id == phone_id, UserPhone.user_id == user_id)
+        return await fetch_one(self._session, statement)
+
+    async def add(self, phone: UserPhone) -> UserPhone:
+        self._session.add(phone)
+        await self._session.flush()
+        return phone
+
+    async def delete(self, phone: UserPhone) -> None:
+        await self._session.delete(phone)
+        await self._session.flush()

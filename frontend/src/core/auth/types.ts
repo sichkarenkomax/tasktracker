@@ -17,6 +17,9 @@ export interface SessionUser {
    */
   is_superuser: boolean
   last_login_at: string | null
+  /** The person's own birthday (stage 2.8). On the session because the profile
+   *  screen reads it from the signed-in person, like the name above. */
+  birthday?: string | null
 }
 
 export interface TokenResponse {

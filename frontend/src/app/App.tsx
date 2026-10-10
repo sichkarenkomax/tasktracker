@@ -17,6 +17,7 @@ import { PreferencesPage } from './pages/PreferencesPage'
 import { ProjectPage } from './pages/ProjectPage'
 import { ProjectsPage } from './pages/ProjectsPage'
 import { SystemPage } from './pages/SystemPage'
+import { MemberProfilePage } from './pages/MemberProfilePage'
 import { UserProfilePage } from './pages/UserProfilePage'
 import { WelcomePage } from './pages/WelcomePage'
 import { MembersPage } from '../core/organizations/MembersPage'
@@ -74,8 +75,11 @@ export function App() {
                   <Route path="/tasks/new" element={<TaskCreatePage />} />
                   <Route path="/tasks/:taskId" element={<TaskDetailPage />} />
                   <Route path="/projects/:projectId/tasks/new" element={<TaskCreatePage />} />
+                  {/* Before `/users/me`: React Router ranks the static segment first, but a
+                      colleague's profile is a different screen from one's own. */}
+                  <Route path="/users/:userId" element={<MemberProfilePage />} />
                   <Route path="/users/me" element={<UserProfilePage />} />
-      <Route path="/preferences" element={<PreferencesPage />} />
+                  <Route path="/preferences" element={<PreferencesPage />} />
                   <Route path="/members" element={<MembersPage />} />
                   <Route path="/structure" element={<OrgStructurePage />} />
                   <Route path="/users" element={<UsersPage />} />
