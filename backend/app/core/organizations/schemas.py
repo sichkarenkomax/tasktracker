@@ -97,6 +97,48 @@ class MemberRoleUpdate(BaseModel):
     role: OrganizationRole
 
 
+# --- the merged people list (stage 2.17) ---------------------------------------
+
+
+class PersonRead(BaseModel):
+    """One row of the merged list.
+
+    The account on one side, this organization's facts about it on the other,
+    and the two are nullable independently: ``in_organization`` false means the
+    row exists only as an account on this installation, and ``email`` is null
+    whenever the viewer may not read that person's contacts (stage 2.6) - which
+    is why ``contacts_visible`` travels with it rather than being inferred from
+    an empty cell.
+    """
+
+    id: UUID
+    username: str
+    first_name: str | None = None
+    last_name: str | None = None
+    avatar_url: str | None = None
+    email: str | None = None
+    status: str
+    last_login_at: datetime | None = None
+    created_at: datetime
+    birthday: str | None = None
+    contacts_visible: bool = True
+
+    in_organization: bool
+    role: OrganizationRole | None = None
+    joined_at: datetime | None = None
+    department_id: UUID | None = None
+    department_name: str | None = None
+    position_id: UUID | None = None
+    position_title: str | None = None
+
+
+class PeoplePageRead(BaseModel):
+    items: list[PersonRead]
+    total: int
+    limit: int
+    offset: int
+
+
 # --- organization structure -------------------------------------------------
 
 

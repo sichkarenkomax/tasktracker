@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import type { ReactNode } from 'react'
-import { BrowserRouter, Outlet, Route, Routes } from 'react-router-dom'
+import { BrowserRouter, Navigate, Outlet, Route, Routes } from 'react-router-dom'
 
 import { AuthProvider } from '../core/auth/AuthContext'
 import { RequireAuth } from '../core/auth/RequireAuth'
@@ -20,9 +20,8 @@ import { SystemPage } from './pages/SystemPage'
 import { MemberProfilePage } from './pages/MemberProfilePage'
 import { UserProfilePage } from './pages/UserProfilePage'
 import { WelcomePage } from './pages/WelcomePage'
-import { MembersPage } from '../core/organizations/MembersPage'
 import { OrgStructurePage } from '../core/organizations/OrgStructurePage'
-import { UsersPage } from '../core/users/UsersPage'
+import { PeoplePage } from '../core/users/PeoplePage'
 import { TaskDetailPage } from '../modules/tasks/pages/TaskDetailPage'
 import { TaskCreatePage } from '../modules/tasks/pages/TaskCreatePage'
 import { TaskListPage } from '../modules/tasks/pages/TaskListPage'
@@ -80,9 +79,12 @@ export function App() {
                   <Route path="/users/:userId" element={<MemberProfilePage />} />
                   <Route path="/users/me" element={<UserProfilePage />} />
                   <Route path="/preferences" element={<PreferencesPage />} />
-                  <Route path="/members" element={<MembersPage />} />
                   <Route path="/structure" element={<OrgStructurePage />} />
-                  <Route path="/users" element={<UsersPage />} />
+                  {/* One people list (2.17): the old `/users` directory and the `/members` roster
+                      are one screen now. `/members` redirects rather than 404ing - the
+                      link exists in bookmarks, in old tickets and in people's heads. */}
+                  <Route path="/users" element={<PeoplePage />} />
+                  <Route path="/members" element={<Navigate to="/users" replace />} />
                   <Route path="/settings" element={<PortalSettingsPage />} />
                 </Route>
 

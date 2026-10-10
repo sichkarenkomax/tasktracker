@@ -682,19 +682,27 @@ def main() -> int:
     check("a second organization is refused", status, 409)
 
     # --- portal administration -----------------------------------------------
-    # The user directory is the one cross-tenant read in the product, and since
-    # `62e0737` it is open to every signed-in account: on a self-hosted
-    # installation every tenant is the same deployment, so looking at the list is
-    # a normal lookup. What stays superuser-only is granting rights over every
-    # tenant - that is what the checks below pin down.
+    # The installation's account directory is the one cross-tenant read in the
+    # product, and since stage 2.17 it is portal administrators only: it hands
+    # out every account's address across every tenant, and 2.6 gave people the
+    # right to withhold exactly that. A member looks at one organization's roster
+    # instead - `GET /organizations/{id}/people` - which is what the checks below
+    # pin down. Granting rights over every tenant was always the narrower of the
+    # two, and is still refused.
     status, _ = call("GET", "/api/v1/users?limit=200", token=owner_token)
     check("the bootstrap administrator sees the user directory", status, 200)
 
     status, _ = call("GET", "/api/v1/users?limit=200", token=assignee_token)
-    check("a plain account sees the user directory", status, 200)
+    check("a plain account does not", status, 403)
 
     status, _ = call("GET", "/api/v1/users?limit=200", token=outsider_token)
-    check("a stranger sees the user directory", status, 200)
+    check("a stranger does not", status, 403)
+
+    status, people = call(
+        "GET", f"/api/v1/organizations/{organization_id}/people", token=assignee_token
+    )
+    check("a member sees their own organization instead", status, 200)
+    check("and everybody in it", people["total"] >= 3, True)
 
     # Nobody may hand the right to themselves; the holder may pass it on.
     status, outsider_profile = call("GET", "/api/v1/users/me", token=outsider_token)

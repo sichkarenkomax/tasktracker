@@ -1,16 +1,19 @@
 """Users API: self-service profile, tenant-scoped lookups, portal directory.
 
-Three different audiences share this module, and the difference is only the guard:
+Four audiences share this module, and the difference is only the guard:
 
 * ``/users/me`` - the signed-in person, about themselves. No check beyond having
   a session.
 * ``/users/{user_id}`` - a member of an organization, about a colleague. Guarded
-  by that organization's ``user.view`` permission.
-* ``/users`` - the portal directory, open to any signed-in account: on a
-  self-hosted installation every tenant is the same deployment, and browsing who
-  is registered is a normal lookup. Only ``/users/{user_id}/superuser`` stays
-  superuser-only - granting rights over every tenant is a portal action, unlike
-  looking at the list.
+  by that organization's ``user.view`` permission, and the contacts inside it are
+  decided per request by the person's own visibility (stage 2.6).
+* ``/users/{user_id}`` with ``PATCH`` - what an administrator may change about
+  somebody: several permissions, all checked before anything is written
+  (stage 2.18).
+* ``/users`` - the installation's account directory, portal administrators only
+  since stage 2.17. It used to be open to any signed-in account; that is a hole,
+  not a convenience, and the merged people list
+  (``GET /organizations/{id}/people``) is what answers "who is here" now.
 """
 
 from __future__ import annotations
@@ -19,7 +22,7 @@ from datetime import date, datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Query, Response
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.core.auth.dependencies import CurrentUser, SessionDep
 from app.core.auth.schemas import UserSummary
@@ -31,8 +34,11 @@ from app.core.organizations.repository import (
     OrganizationRepository,
     PositionRepository,
 )
+from app.core.organizations.service import org_structure_service, organization_service
 from app.core.pagination import PageDep
+from app.core.permissions.roles import OrganizationRole
 from app.core.permissions.service import AuthorizationService
+from app.core.users.models import PhoneKind, UserStatus
 from app.core.users.repository import UserPhoneRepository, UserRepository
 from app.core.users.service import UserService
 from app.core.users.visibility import ContactsVisibility
@@ -43,14 +49,34 @@ router = APIRouter(prefix="/users", tags=["users"])
 class PhoneRead(BaseModel):
     """One phone number as the API hands it out.
 
-    Read straight off the row, so a caller never builds this by hand.
+    Read straight off the row, so a caller never builds this by hand. The number
+    is the plain form the server stores; the mask that groups it for reading is
+    the screen's business (stage 2.8).
     """
 
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
     number: str
-    comment: str | None = None
+    kind: PhoneKind
+    country: str | None = None
+
+
+class PhoneWrite(BaseModel):
+    """A number and what it is for.
+
+    ``kind`` defaults to "work" because that is what a number in an office
+    usually is, and because a field left empty on a form the person filled in
+    carefully is a field the product decided for them.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    number: str = Field(min_length=5, max_length=32)
+    kind: PhoneKind = PhoneKind.WORK
+    #: The two letters the number is written in (`"RU"`, `"US"`). Required for a
+    #: national number, optional for one that already carries a `+`.
+    country: str | None = Field(default=None, min_length=2, max_length=2)
 
 
 class UserProfile(UserSummary):
@@ -86,10 +112,16 @@ class ProfileRead(BaseModel):
     department_name: str | None = None
     position_id: UUID | None = None
     position_title: str | None = None
+    #: Who this person reports to, so the editor can show the line that exists
+    #: rather than an empty picker that would look like "nobody".
+    manager_id: UUID | None = None
     role: str | None = None
     birthday: date | None = None
-    phones: list[PhoneRead] = []
+    phones: list[PhoneRead] = Field(default_factory=list)
     contacts_visible: bool = True
+    #: The account's own state, and not the organization's: a locked login is
+    #: locked everywhere, so the card says so before somebody tries to use it.
+    status: str = UserStatus.ACTIVE.value
     #: Always false in v1: chat arrives in stage 8, and a button that cannot do
     #: anything is worse than no button. The profile says so in the UI.
     can_message: bool = False
@@ -118,13 +150,6 @@ class BirthdayUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     birthday: date | None = None
-
-
-class PhoneWrite(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    number: str = Field(min_length=3, max_length=32)
-    comment: str | None = Field(default=None, max_length=120)
 
 
 class AdminEmailUpdate(BaseModel):
@@ -229,7 +254,7 @@ async def add_own_phone(
 ) -> PhoneRead:
     stored = await UserService(
         UserRepository(session), bus, UserPhoneRepository(session)
-    ).add_phone(user, number=payload.number, comment=payload.comment)
+    ).add_phone(user, number=payload.number, kind=payload.kind, country=payload.country)
     await session.commit()
     return PhoneRead.model_validate(stored)
 
@@ -249,7 +274,11 @@ async def update_own_phone(
         # never has to admit that the id exists.
         raise NotFoundError("Phone number not found")
     stored = await UserService(UserRepository(session), bus, repository).update_phone(
-        user, phone=phone, number=payload.number, comment=payload.comment
+        user,
+        phone=phone,
+        number=payload.number,
+        kind=payload.kind,
+        country=payload.country,
     )
     await session.commit()
     return PhoneRead.model_validate(stored)
@@ -271,13 +300,34 @@ async def delete_own_phone(
     return Response(status_code=204)
 
 
-@router.get("", response_model=AdminUserPage, summary="Every account on the installation")
+@router.get(
+    "",
+    response_model=AdminUserPage,
+    summary="Every account on the installation (portal administrators only)",
+)
 async def list_users(
     user: CurrentUser,
     session: SessionDep,
     page: PageDep,
     search: str | None = Query(default=None, max_length=200),
 ) -> AdminUserPage:
+    """The installation's account directory.
+
+    Portal administrators only, and that is a correction rather than a
+    restriction added for the sake of it. This used to be open to anybody who
+    could sign in, on the argument that a self-hosted installation is one
+    company's own and browsing who is registered is a normal lookup - but it
+    hands out every account's *address* across every tenant, which is exactly
+    what a person's contacts visibility (stage 2.6) says they may withhold, and
+    it answers a question the product now answers properly: the merged people
+    list (``GET /organizations/{id}/people``) gives the members of one
+    organization, with the contacts rules applied, and only a superuser sees the
+    accounts that are outside it.
+
+    Granting administrator rights has always been the narrower of the two: it
+    changes rights over every tenant, so it is superuser-only and always was.
+    """
+    _require_superuser(user)
     repository = UserRepository(session)
     accounts = await repository.search(term=search, limit=page.limit, offset=page.offset)
     return AdminUserPage(
@@ -392,10 +442,12 @@ async def read_profile(
         department_name=department_name,
         position_id=membership.position_id if membership is not None else None,
         position_title=position_title,
+        manager_id=membership.manager_id if membership is not None else None,
         role=None if membership is None else str(membership.role),
         birthday=target.birthday if visible else None,
         phones=phones,
         contacts_visible=visible,
+        status=str(target.status),
     )
 
 
@@ -444,6 +496,190 @@ async def set_member_email(
     await UserService(repository, bus, UserPhoneRepository(session)).change_email(
         target=target, actor=user, organization_id=organization_id, email=payload.email
     )
+    await session.commit()
+    return UserProfile.model_validate(target)
+
+
+class AdminUserUpdate(BaseModel):
+    """What an administrator may change about a member (stage 2.18).
+
+    Every key is optional and an omitted key means "leave it alone" - including
+    the nullable ones, which is why ``birthday`` uses a sentinel below rather
+    than ``None``: "do not touch" and "remove the date" must be different
+    requests, or a form that saves the name would quietly erase a birthday.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    first_name: str | None = Field(default=None, max_length=64)
+    last_name: str | None = Field(default=None, max_length=64)
+    email: str | None = Field(default=None, min_length=3, max_length=320)
+    #: Absent means "leave it"; explicit null means "remove it". See
+    #: ``UNSET``.
+    birthday: date | None = None
+    #: ``disabled`` locks the account out of signing in; the other two statuses
+    #: are the lifecycle's own and are not set by hand here.
+    status: UserStatus | None = None
+    #: Somebody's whole set of numbers, as the administrator sees it (2.18). A
+    #: replacement rather than three calls, so a refused field cannot leave half
+    #: a list behind - and omitted from the list means "this number is not theirs
+    #: any more", which no other spelling of the request can say.
+    phones: list[PhoneWrite] | None = None
+    #: Organization facts, changed with their own permissions - see the route.
+    role: OrganizationRole | None = None
+    department_id: UUID | None = None
+    position_id: UUID | None = None
+    manager_id: UUID | None = None
+
+    @model_validator(mode="after")
+    def _at_least_one_field(self) -> AdminUserUpdate:
+        fields = self.model_fields_set
+        if not fields:
+            raise ValueError("provide at least one field to change")
+        return self
+
+    @property
+    def birthday_set(self) -> bool:
+        return "birthday" in self.model_fields_set
+
+
+@router.patch(
+    "/{user_id}",
+    response_model=UserProfile,
+    summary="An administrator edits a member (name, email, birthday, status, role, placement)",
+)
+async def update_member(
+    user_id: UUID,
+    payload: AdminUserUpdate,
+    organization_id: UUID,
+    user: CurrentUser,
+    session: SessionDep,
+    bus: EventBusDep,
+) -> UserProfile:
+    """The one place an administrator changes another person (stage 2.18).
+
+    One route rather than four, and the reason is atomicity: an editor with the
+    name on one screen, the role on another and the address on a third would
+    save half of what the administrator typed whenever one part was refused -
+    a member renamed with the address left stale, or the reverse. Here every
+    permission is checked *before* anything is written, so a request that is
+    refused leaves the person exactly as they were, and the message says which
+    part was not allowed.
+
+    The permissions stay separate because the powers are separate:
+
+    * ``user.update`` - the person's own data (name, address, birthday);
+    * ``organization.members.manage`` plus a strictly higher rank - the role,
+      because handing out rights is the one thing an equal rank may not do;
+    * ``orgstructure.manage`` - where they sit in the org chart;
+    * superuser - disabling the account, because a disabled login stops working
+      in *every* organization this person belongs to, and a member of one
+      organization must not be able to do that.
+    """
+    authorization = AuthorizationService(session)
+    member = await OrganizationRepository(session).get_member(
+        organization_id=organization_id, user_id=user_id
+    )
+    target = await UserRepository(session).get(user_id)
+    if target is None or member is None:
+        raise NotFoundError("User not found")
+
+    repository = UserRepository(session)
+    service = UserService(repository, bus, UserPhoneRepository(session))
+
+    wants_role = payload.role is not None and payload.role != member.role
+    wants_placement = any(
+        field in payload.model_fields_set
+        for field in ("department_id", "position_id", "manager_id")
+    )
+    wants_status = payload.status is not None and payload.status is not target.status
+
+    # Every check first, every write after: see the docstring.
+    if wants_role:
+        await authorization.require_manage_member(
+            user=user,
+            organization_id=organization_id,
+            target_user_id=user_id,
+            target_role=member.role,
+            new_role=payload.role,  # not None whenever `wants_role` is true
+        )
+    if wants_placement:
+        await authorization.require_permission(
+            user=user, organization_id=organization_id, permission="orgstructure.manage"
+        )
+    if wants_status and not user.is_superuser:
+        raise PermissionDeniedError(
+            "Only a portal administrator may change an account's status",
+            details={"status": str(payload.status)},
+        )
+    if user.id == user_id and payload.email is not None:
+        # The same rule as `set_member_email`: one's own address is a separate
+        # question this stage leaves alone, and one route that answered it by
+        # accident would answer it for everybody.
+        raise PermissionDeniedError(
+            "Changing your own email is not available here",
+            details={"hint": "ask an administrator"},
+        )
+    account_fields = {
+        "first_name": payload.first_name,
+        "last_name": payload.last_name,
+    }
+    wants_phones = payload.phones is not None
+    if any(value is not None for value in account_fields.values()) or wants_phones:
+        await authorization.require_permission(
+            user=user, organization_id=organization_id, permission="user.update"
+        )
+
+    if payload.email is not None and payload.email.strip() != target.email:
+        await authorization.require_permission(
+            user=user, organization_id=organization_id, permission="user.update"
+        )
+        await service.change_email(
+            target=target, actor=user, organization_id=organization_id, email=payload.email
+        )
+    if any(value is not None for value in account_fields.values()):
+        await service.update_profile(
+            target,
+            first_name=account_fields["first_name"],
+            last_name=account_fields["last_name"],
+        )
+    if payload.birthday_set and payload.birthday != target.birthday:
+        await service.set_birthday(target, birthday=payload.birthday)
+    if wants_phones:
+        # Checked above, written here: the numbers are normalized (and refused
+        # for being too short or too long) before the first row changes.
+        assert payload.phones is not None
+        await service.replace_phones(
+            target,
+            numbers=[(phone.number, phone.kind, phone.country) for phone in payload.phones],
+        )
+    if wants_status:
+        assert payload.status is not None
+        await service.set_status(
+            target=target, status=payload.status, actor=user, organization_id=organization_id
+        )
+
+    if wants_role:
+        organization = await OrganizationRepository(session).get(organization_id)
+        assert organization is not None  # the membership row proves it exists
+        await organization_service(session, bus).change_member_role(
+            organization=organization,
+            member=member,
+            new_role=payload.role,  # type: ignore[arg-type]  # checked by `wants_role`
+            actor=user,
+        )
+    if wants_placement:
+        await org_structure_service(session, bus).place_member(
+            member,
+            actor=user,
+            department_id=payload.department_id,
+            department_set="department_id" in payload.model_fields_set,
+            position_id=payload.position_id,
+            position_set="position_id" in payload.model_fields_set,
+            manager_id=payload.manager_id,
+            manager_set="manager_id" in payload.model_fields_set,
+        )
+
     await session.commit()
     return UserProfile.model_validate(target)
 

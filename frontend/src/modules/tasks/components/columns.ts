@@ -1,12 +1,15 @@
 import { useI18n } from '../../../core/i18n'
+import { hiddenColumns, readColumns, writeColumns } from '../../../core/ui/columns'
+import type { ColumnSet } from '../../../core/ui/columns'
 import type { TranslationKey } from '../types'
 
 /**
- * Table columns the person can show, hide and reorder.
+ * The task list's vocabulary of columns.
  *
- * The layout is stored as an ordered list of visible ids rather than as a set of
- * flags, because "which columns, in what order" is one preference and splitting
- * it into a set plus a separate order is how the two drift apart.
+ * The mechanism - the stored layout, its repair, the drag-and-drop panel - is
+ * generic and lives in `core/ui/columns` and `core/ui/ColumnSettingsPanel`,
+ * because the people list (2.17) offers the same thing. What is here is only
+ * the part that is about tasks.
  */
 export const COLUMN_IDS = [
   'title',
@@ -20,17 +23,6 @@ export const COLUMN_IDS = [
 ] as const
 
 export type ColumnId = (typeof COLUMN_IDS)[number]
-
-export const COLUMN_LABELS: Record<ColumnId, TranslationKey> = {
-  title: 'columns.column.title',
-  status: 'columns.column.status',
-  priority: 'columns.column.priority',
-  assignee: 'columns.column.assignee',
-  due_date: 'columns.column.due_date',
-  project: 'columns.column.project',
-  updated_at: 'columns.column.updated_at',
-  created_at: 'columns.column.created_at',
-}
 
 /**
  * The title column cannot be hidden: a row of empty cells with checkboxes in it
@@ -48,74 +40,44 @@ export const DEFAULT_COLUMNS: ColumnId[] = [
   'updated_at',
 ]
 
-const STORAGE_KEY = 'tasktracker.taskColumns'
-
-function isColumnId(value: unknown): value is ColumnId {
-  return typeof value === 'string' && (COLUMN_IDS as readonly string[]).includes(value)
-}
-
-/**
- * The saved layout, repaired rather than trusted.
- *
- * A stored layout written by an older build - or a hand-edited one - can be
- * missing columns that now exist, list a column that no longer does, or repeat
- * one. All three would render as a broken table, so the value is normalised here
- * instead of being defended against at every read.
- */
-export function readColumns(): ColumnId[] {
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY)
-    if (!raw) return DEFAULT_COLUMNS
-    const parsed: unknown = JSON.parse(raw)
-    if (!Array.isArray(parsed)) return DEFAULT_COLUMNS
-
-    const seen = new Set<ColumnId>()
-    const ordered: ColumnId[] = []
-    for (const entry of parsed) {
-      if (!isColumnId(entry) || seen.has(entry)) continue
-      seen.add(entry)
-      ordered.push(entry)
-    }
-    // The required columns are added back if the stored layout dropped them.
-    for (const required of REQUIRED_COLUMNS) {
-      if (!seen.has(required)) ordered.unshift(required)
-    }
-    return ordered
-  } catch {
-    return DEFAULT_COLUMNS
+/** Built lazily because the labels need the translator, which needs a context. */
+export function columnSet(t: (key: TranslationKey) => string): ColumnSet<ColumnId> {
+  const labels: Record<ColumnId, string> = {
+    title: t('columns.column.title'),
+    status: t('columns.column.status'),
+    priority: t('columns.column.priority'),
+    assignee: t('columns.column.assignee'),
+    due_date: t('columns.column.due_date'),
+    project: t('columns.column.project'),
+    updated_at: t('columns.column.updated_at'),
+    created_at: t('columns.column.created_at'),
+  }
+  return {
+    ids: COLUMN_IDS,
+    labels,
+    required: REQUIRED_COLUMNS,
+    defaults: DEFAULT_COLUMNS,
+    storageKey: 'tasktracker.taskColumns',
   }
 }
 
-export function writeColumns(columns: ColumnId[]): void {
-  try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(columns))
-  } catch {
-    /* preference only */
-  }
+/** The saved layout, repaired rather than trusted (see `core/ui/columns`). */
+export function taskColumns(t: (key: TranslationKey) => string): ColumnId[] {
+  return readColumns(columnSet(t))
 }
 
-/** Hidden columns are the ones the saved layout leaves out. */
-export function hiddenColumns(columns: ColumnId[]): ColumnId[] {
-  return COLUMN_IDS.filter((id) => !columns.includes(id))
+export function saveTaskColumns(
+  t: (key: TranslationKey) => string,
+  columns: ColumnId[],
+): void {
+  writeColumns(columnSet(t), columns)
 }
 
-/** Move one column by `offset` places, keeping the rest in order. */
-export function moveColumn(columns: ColumnId[], from: number, offset: number): ColumnId[] {
-  const next = [...columns]
-  const target = from + offset
-  if (target < 0 || target >= next.length) return columns
-  const [moved] = next.splice(from, 1)
-  if (moved === undefined) return columns
-  next.splice(target, 0, moved)
-  return next
-}
-
-/** Drop `dragged` at the position `over` currently occupies. */
-export function reorder(columns: ColumnId[], dragged: ColumnId, over: ColumnId): ColumnId[] {
-  const from = columns.indexOf(dragged)
-  const target = columns.indexOf(over)
-  if (from === -1 || target === -1 || from === target) return columns
-  return moveColumn(columns, from, target - from)
+export function hiddenTaskColumns(
+  t: (key: TranslationKey) => string,
+  columns: ColumnId[],
+): ColumnId[] {
+  return hiddenColumns(columnSet(t), columns)
 }
 
 /** A hook so a component gets the layout and the setter without re-plumbing it. */
@@ -126,11 +88,11 @@ export function useColumns(): {
   label: (id: ColumnId) => string
 } {
   const { t } = useI18n()
-  const columns = readColumns()
+  const set = columnSet(t)
   return {
-    columns,
-    setColumns: (next: ColumnId[]) => writeColumns(next),
-    reset: () => writeColumns(DEFAULT_COLUMNS),
-    label: (id: ColumnId) => t(COLUMN_LABELS[id]),
+    columns: readColumns(set),
+    setColumns: (next: ColumnId[]) => writeColumns(set, next),
+    reset: () => writeColumns(set, [...DEFAULT_COLUMNS]),
+    label: (id: ColumnId) => set.labels[id],
   }
 }

@@ -5,12 +5,18 @@ from __future__ import annotations
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Query, status
 
 from app.config.settings import get_settings
 from app.core.auth.dependencies import CurrentUser, SessionDep
 from app.core.dependencies import EventBusDep
-from app.core.errors import ConflictError, NotFoundError, PermissionDeniedError
+from app.core.errors import (
+    ConflictError,
+    NotFoundError,
+    PermissionDeniedError,
+    ValidationError,
+)
+from app.core.organizations.people import SORT_COLUMNS, PeopleQuery, PeopleRepository
 from app.core.organizations.repository import (
     DepartmentRepository,
     DeputyRepository,
@@ -31,6 +37,8 @@ from app.core.organizations.schemas import (
     OrganizationRead,
     OrganizationUpdate,
     OrgStructureRead,
+    PeoplePageRead,
+    PersonRead,
     PlacementRead,
     PositionCreate,
     PositionRead,
@@ -41,17 +49,25 @@ from app.core.organizations.schemas import (
     TeamUpdate,
     UserSummaryRead,
 )
-from app.core.organizations.service import OrganizationService, OrgStructureService, TeamService
+from app.core.organizations.service import (
+    OrganizationService,
+    OrgStructureService,
+    TeamService,
+    org_structure_service,
+    organization_service,
+)
+from app.core.pagination import PageDep
 from app.core.permissions.dependencies import require_permission
+from app.core.permissions.roles import OrganizationRole
 from app.core.permissions.service import AuthorizationService
 from app.core.users.models import User
-from app.core.users.repository import UserRepository
+from app.core.users.visibility import ContactsVisibility
 
 router = APIRouter(tags=["organizations"])
 
 
 async def _organizations(session: SessionDep, bus: EventBusDep) -> OrganizationService:
-    return OrganizationService(OrganizationRepository(session), UserRepository(session), bus)
+    return organization_service(session, bus)
 
 
 # --- organizations ------------------------------------------------------
@@ -162,6 +178,100 @@ async def delete_organization(
     service = await _organizations(session, bus)
     await service.delete(organization, actor=user)
     await session.commit()
+
+
+# --- the merged people list (stage 2.17) ---------------------------------
+@router.get(
+    "/organizations/{organization_id}/people",
+    response_model=PeoplePageRead,
+    summary="One list of people: this organization's members, and (for a superuser) "
+    "the accounts of this installation that are not in it",
+)
+async def list_people(
+    organization_id: UUID,
+    user: Annotated[User, Depends(require_permission("organization.view"))],
+    session: SessionDep,
+    page: PageDep,
+    search: str | None = Query(default=None, max_length=200),
+    role: OrganizationRole | None = None,
+    department_id: UUID | None = None,
+    position_id: UUID | None = None,
+    status: str | None = Query(default=None, pattern="^(active|invited|disabled)$"),
+    scope: Annotated[str, Query(pattern="^(members|outside|all)$")] = "members",
+    sort: Annotated[str, Query()] = "name",
+    direction: Annotated[str, Query(pattern="^(asc|desc)$")] = "asc",
+) -> PeoplePageRead:
+    """Members and installation accounts in one table (stage 2.17).
+
+    Sorting, filtering and paging happen in SQL: the directory can be longer
+    than a page, and an order that only held for the rows the browser happened
+    to receive would contradict itself on the next one.
+
+    Accounts outside this organization are the installation's, not the
+    organization's, so asking for them is a superuser's right and anybody else's
+    is a permission error - the same tenant rule every other route follows.
+    """
+    if sort not in SORT_COLUMNS:
+        raise ValidationError(f"Cannot sort by {sort!r}", details={"allowed": sorted(SORT_COLUMNS)})
+    if scope != "members" and not user.is_superuser:
+        raise PermissionDeniedError(
+            "Only a portal administrator may list accounts outside this organization"
+        )
+
+    query = PeopleQuery(
+        search=search,
+        role=None if role is None else str(role),
+        department_id=department_id,
+        position_id=position_id,
+        status=status,
+        scope=scope,
+        sort=sort,
+        direction=direction,
+        limit=page.limit,
+        offset=page.offset,
+    )
+    result = await PeopleRepository(session).page(organization_id, query)
+
+    visibility = ContactsVisibility(session)
+    viewer_role = await AuthorizationService(session).require_member(
+        user=user, organization_id=organization_id
+    )
+
+    items: list[PersonRead] = []
+    for row in result.rows:
+        may_see = await visibility.viewer_may_see(
+            viewer=user,
+            person_id=row.user.id,
+            organization_id=organization_id,
+            viewer_role=viewer_role,
+        )
+        items.append(
+            PersonRead(
+                id=row.user.id,
+                username=row.user.username,
+                first_name=row.user.first_name,
+                last_name=row.user.last_name,
+                avatar_url=row.user.avatar_url,
+                # Null when the person keeps their contacts to themselves. The
+                # account column is needed to invite or find somebody, so it is
+                # never blanked - only the address, which is the contact.
+                email=row.user.email if may_see else None,
+                status=str(row.user.status),
+                last_login_at=row.user.last_login_at,
+                created_at=row.user.created_at,
+                birthday=row.user.birthday.isoformat() if row.user.birthday else None,
+                contacts_visible=may_see,
+                in_organization=row.membership is not None,
+                role=None if row.membership is None else row.membership.role,
+                joined_at=None if row.membership is None else row.membership.joined_at,
+                department_id=None if row.membership is None else row.membership.department_id,
+                department_name=None if row.department is None else row.department.name,
+                position_id=None if row.membership is None else row.membership.position_id,
+                position_title=None if row.position is None else row.position.title,
+            )
+        )
+
+    return PeoplePageRead(items=items, total=result.total, limit=page.limit, offset=page.offset)
 
 
 # --- membership ---------------------------------------------------------
@@ -456,13 +566,7 @@ async def remove_team_member(
 
 
 async def _org_structure(session: SessionDep, bus: EventBusDep) -> OrgStructureService:
-    return OrgStructureService(
-        DepartmentRepository(session),
-        PositionRepository(session),
-        DeputyRepository(session),
-        OrganizationRepository(session),
-        bus,
-    )
+    return org_structure_service(session, bus)
 
 
 @router.get(

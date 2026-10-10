@@ -6,9 +6,9 @@ import { useI18n } from '../../../core/i18n'
 import { Icon } from '../../../core/layout/Icon'
 import type { Member } from '../../../core/organizations/api'
 import type { Project } from '../../../core/projects/api'
+import { ColumnSettingsPanel } from '../../../core/ui/ColumnSettingsPanel'
 import { DueDateBadge, PriorityBadge, StatusBadge } from './Badges'
-import { ColumnSettings } from './ColumnSettings'
-import { COLUMN_LABELS, readColumns, writeColumns } from './columns'
+import { columnSet, saveTaskColumns, taskColumns } from './columns'
 import type { ColumnId } from './columns'
 import { isDone } from '../types'
 import type { Task } from '../types'
@@ -47,7 +47,8 @@ export function TaskTable({
   onToggleDone,
 }: TaskTableProps) {
   const { t } = useI18n()
-  const [columns, setColumns] = useState<ColumnId[]>(readColumns)
+  const set = columnSet(t)
+  const [columns, setColumns] = useState<ColumnId[]>(() => taskColumns(t))
   const [configuring, setConfiguring] = useState(false)
 
   // A project-scoped list cannot usefully show the project, so it is dropped
@@ -57,7 +58,7 @@ export function TaskTable({
 
   function applyColumns(next: ColumnId[]) {
     setColumns(next)
-    writeColumns(next)
+    saveTaskColumns(t, next)
   }
 
   function cell(task: Task, column: ColumnId): React.ReactNode {
@@ -118,7 +119,7 @@ export function TaskTable({
       </div>
 
       {configuring ? (
-        <ColumnSettings columns={columns} onChange={applyColumns} />
+        <ColumnSettingsPanel set={set} columns={columns} onChange={applyColumns} />
       ) : null}
 
       <div className="table-scroll">
@@ -130,7 +131,7 @@ export function TaskTable({
               </th>
               {visible.map((column) => (
                 <th key={column} scope="col">
-                  {t(COLUMN_LABELS[column])}
+                  {set.labels[column]}
                 </th>
               ))}
             </tr>

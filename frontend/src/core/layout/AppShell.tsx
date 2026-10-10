@@ -488,7 +488,7 @@ function PeopleNavigator({ onNavigate }: { onNavigate: () => void }) {
 
       <ul className="nav__list">
         <li>
-          <NavRow to="/users" icon="users" label={t('nav.users')} end onNavigate={onNavigate} />
+          <NavRow to="/users" icon="users" label={t('people.title')} end onNavigate={onNavigate} />
         </li>
         <li>
           <NavRow to="/structure" icon="members" label={t('org.structure')} end onNavigate={onNavigate} />

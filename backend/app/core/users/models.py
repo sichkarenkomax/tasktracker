@@ -6,7 +6,7 @@ from datetime import date, datetime
 from enum import StrEnum
 from uuid import UUID
 
-from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Index, String, false
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Index, String, UniqueConstraint, false
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.types import Uuid
 
@@ -18,6 +18,22 @@ class UserStatus(StrEnum):
     ACTIVE = "active"
     INVITED = "invited"
     DISABLED = "disabled"
+
+
+class PhoneKind(StrEnum):
+    """What a number is for (stage 2.8).
+
+    A fixed list rather than free text, because a person's own words here are
+    only ever a label the reader already knows: "рабочий", "домашний",
+    "мобильный" are the three anybody writes, and "other" says the rest. Free
+    text made this column a second comment field - and a comment field is
+    where a phone number goes to be forgotten.
+    """
+
+    WORK = "work"
+    HOME = "home"
+    MOBILE = "mobile"
+    OTHER = "other"
 
 
 class User(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -86,12 +102,17 @@ class User(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
 
 class UserPhone(UUIDPrimaryKeyMixin, TimestampMixin, Base):
-    """One phone number, with whatever the owner wants to say about it.
+    """One phone number, and what it is for.
 
-    A separate table rather than a column because people have more than one and
-    the number alone is not the whole answer: "work", "the one for the workshop
-    in Lyon", "call after six". The comment belongs to the number, not to the
-    person, so it moves with it when the number is edited or removed.
+    A separate table rather than a column because people have more than one. The
+    *kind* is a closed list (see :class:`PhoneKind`) and lives on the row, so it
+    travels with its own number when that number is edited or removed.
+
+    The number itself is stored in E.164 - digits with a leading ``+`` - which
+    is the only form that is comparable, sortable and unambiguous. The mask that
+    groups it for reading is a presentation detail (stage 2.8), and a database
+    holding "+7 (900) 123-45-67" would sort by its punctuation and match nothing
+    when somebody searches for a number they copied out of a printed ad.
 
     Several rows per user, ordered by ``created_at`` and nothing else: which
     number is the main one is a thing a person states by writing it first, not
@@ -106,9 +127,28 @@ class UserPhone(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     number: Mapped[str] = mapped_column(String(32), nullable=False)
 
-    comment: Mapped[str | None] = mapped_column(String(120))
+    #: The country the number is *read* in, ISO 3166-1 alpha-2 ("RU", "US").
+    #: Nullable and defaulted to nothing on purpose: a number stored before this
+    #: column existed has no country, and guessing one would put somebody else's
+    #: number into a national format they never wrote. Such a row is shown in
+    #: the international form, which is the one that cannot be misread.
+    country: Mapped[str | None] = mapped_column(String(2))
 
-    __table_args__ = (Index("ix_user_phones_user_id_created_at", "user_id", "created_at"),)
+    kind: Mapped[PhoneKind] = mapped_column(
+        value_enum(PhoneKind, name="phone_kind", length=16),
+        nullable=False,
+        default=PhoneKind.WORK,
+        server_default=PhoneKind.WORK.value,
+    )
+
+    #: One row per number per person, and the database says so rather than the
+    #: service alone. "Work" and "mobile" for the same digits is not two numbers,
+    #: it is one number stated twice, and a duplicate makes every list keyed by
+    #: the number quietly drop one of them.
+    __table_args__ = (
+        Index("ix_user_phones_user_id_created_at", "user_id", "created_at"),
+        UniqueConstraint("user_id", "number", name="uq_user_phones_user_id_number"),
+    )
 
     def __repr__(self) -> str:
         return f"<UserPhone {self.number}>"

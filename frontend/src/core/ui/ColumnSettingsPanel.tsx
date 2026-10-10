@@ -1,15 +1,9 @@
 import { useState } from 'react'
 
-import { useI18n } from '../../../core/i18n'
-import { Icon } from '../../../core/layout/Icon'
-import {
-  COLUMN_IDS,
-  COLUMN_LABELS,
-  DEFAULT_COLUMNS,
-  REQUIRED_COLUMNS,
-  reorder,
-} from './columns'
-import type { ColumnId } from './columns'
+import { useI18n } from '../i18n'
+import { Icon } from '../layout/Icon'
+import { reorder } from './columns'
+import type { ColumnSet } from './columns'
 
 /**
  * Column chooser with drag-and-drop reordering.
@@ -19,22 +13,28 @@ import type { ColumnId } from './columns'
  * the frontend for one panel. Every item also carries explicit up and down
  * buttons, because drag-and-drop is unusable with a keyboard and a settings
  * panel that cannot be operated without a mouse is not finished.
+ *
+ * Generic over the column set, because the task list and the people list both
+ * offer this and neither of them should own it.
  */
-export function ColumnSettings({
+export function ColumnSettingsPanel<Id extends string>({
+  set,
   columns,
   onChange,
 }: {
-  columns: ColumnId[]
-  onChange: (next: ColumnId[]) => void
+  set: ColumnSet<Id>
+  columns: Id[]
+  onChange: (next: Id[]) => void
 }) {
   const { t } = useI18n()
-  const [dragging, setDragging] = useState<ColumnId | null>(null)
-  const [over, setOver] = useState<ColumnId | null>(null)
+  const [dragging, setDragging] = useState<Id | null>(null)
+  const [over, setOver] = useState<Id | null>(null)
 
+  const required = set.required ?? new Set<Id>()
   const visible = new Set(columns)
-  const hidden = COLUMN_IDS.filter((id) => !visible.has(id))
+  const hidden = set.ids.filter((id) => !visible.has(id))
 
-  function move(id: ColumnId, offset: number) {
+  function move(id: Id, offset: number) {
     const from = columns.indexOf(id)
     const to = from + offset
     if (from === -1 || to < 0 || to >= columns.length) return
@@ -45,7 +45,7 @@ export function ColumnSettings({
     onChange(next)
   }
 
-  function commitDrop(target: ColumnId) {
+  function commitDrop(target: Id) {
     if (dragging && dragging !== target) {
       onChange(reorder(columns, dragging, target))
     }
@@ -57,7 +57,7 @@ export function ColumnSettings({
     <div className="panel column-settings">
       <div className="column-settings__head">
         <h2>{t('columns.configure')}</h2>
-        <button type="button" className="link" onClick={() => onChange([...DEFAULT_COLUMNS])}>
+        <button type="button" className="link" onClick={() => onChange([...set.defaults])}>
           {t('columns.reset')}
         </button>
       </div>
@@ -67,7 +67,9 @@ export function ColumnSettings({
         {columns.map((id, index) => (
           <li
             key={id}
-            className={over === id ? 'column-settings__item column-settings__item--over' : 'column-settings__item'}
+            className={
+              over === id ? 'column-settings__item column-settings__item--over' : 'column-settings__item'
+            }
             draggable
             onDragStart={() => setDragging(id)}
             onDragOver={(event) => {
@@ -87,12 +89,12 @@ export function ColumnSettings({
             <span className="column-settings__grip" aria-hidden="true">
               <Icon name="grip" size={16} />
             </span>
-            <span className="column-settings__label">{t(COLUMN_LABELS[id])}</span>
+            <span className="column-settings__label">{set.labels[id]}</span>
             <span className="column-settings__move">
               <button
                 type="button"
                 className="icon-button"
-                aria-label={`${t('columns.title')}: ${t(COLUMN_LABELS[id])} ↑`}
+                aria-label={`${t('columns.title')}: ${set.labels[id]} ↑`}
                 disabled={index === 0}
                 onClick={() => move(id, -1)}
               >
@@ -101,17 +103,17 @@ export function ColumnSettings({
               <button
                 type="button"
                 className="icon-button"
-                aria-label={`${t('columns.title')}: ${t(COLUMN_LABELS[id])} ↓`}
+                aria-label={`${t('columns.title')}: ${set.labels[id]} ↓`}
                 disabled={index === columns.length - 1}
                 onClick={() => move(id, 1)}
               >
                 ↓
               </button>
-              {REQUIRED_COLUMNS.has(id) ? null : (
+              {required.has(id) ? null : (
                 <button
                   type="button"
                   className="icon-button"
-                  aria-label={`${t('app.delete')}: ${t(COLUMN_LABELS[id])}`}
+                  aria-label={`${t('app.delete')}: ${set.labels[id]}`}
                   onClick={() => onChange(columns.filter((column) => column !== id))}
                 >
                   <Icon name="close" size={14} />
@@ -134,7 +136,7 @@ export function ColumnSettings({
                 onClick={() => onChange([id, ...columns])}
               >
                 <Icon name="plus" size={13} />
-                {t(COLUMN_LABELS[id])}
+                {set.labels[id]}
               </button>
             ))}
           </div>

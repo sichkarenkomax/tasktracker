@@ -2648,6 +2648,71 @@ textarea {
   font-size: 0.75rem;
 }
 
+/* The one people list (2.17). */
+.people__name {
+  display: inline-flex;
+  gap: var(--space-2);
+  align-items: center;
+  /* No underline under a name. The row is the link, the avatar and the name are
+     its contents, and a line through every name turns a table of people into a
+     list of URLs; the colour on hover is what says "this one opens". The same
+     reasoning as `.button` in 2.0, where a link that is a control should not
+     carry the browser's link decoration. */
+  color: inherit;
+  text-decoration: none;
+}
+
+.people__name:hover {
+  color: var(--link);
+}
+
+/* The face answers the hover too: a ring rather than an underline, so the row
+   says "this opens" without drawing a line under a name. */
+.people__name:hover .avatar {
+  box-shadow: 0 0 0 2px var(--link);
+}
+
+/* A sortable column header. A button, because a header that reorders rows is an
+   action and has to be reachable by keyboard; the arrow is decoration on top of
+   `aria-sort`, which is what a screen reader actually reads. */
+.table__sort {
+  display: inline-flex;
+  gap: 0.35em;
+  align-items: center;
+  padding: 0;
+  font: inherit;
+  font-weight: 600;
+  color: inherit;
+  text-align: left;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+.table__sort:hover {
+  color: var(--accent);
+}
+
+.table__sort:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.table__sort-arrow {
+  color: var(--accent);
+}
+
+.people-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.people-filters .field {
+  min-width: 12rem;
+  margin: 0;
+}
+
 /* The administrator's address editor (stage 2.7). It sits under the row it
    belongs to rather than replacing it, so a wrong address can be compared with
    the old one while it is being corrected. */
@@ -2682,16 +2747,114 @@ textarea {
   margin: 0;
 }
 
+/* The phones, as one block.
+ *
+ * `grid-column: 1 / -1` is the whole point of this: inside `.fields` the heading,
+ * the list and the "add" form were three separate grid children, and a grid with
+ * `auto-fit` columns gave each of them one narrow column of its own. A number is
+ * not a short field - it is the longest thing on the form, and it belongs on the
+ * whole width of it. */
+.phones-block {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.phones-block > h3 {
+  margin: 0;
+}
+
+.phones-block > .muted {
+  margin: 0;
+}
+
+/* The rows the administrator is editing.
+ *
+ * Not `.org__list`: that is a flex row with the action on the right, which leaves
+ * a number field about eleven characters wide. Here the fields take the row and
+ * the remove button goes underneath them, where it is still reachable and cannot
+ * crowd the number. */
+.phones-editor {
+  width: 100%;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.phones-editor li {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  background: var(--surface-01-bg);
+  border: 1px solid var(--surface-02-border);
+  border-radius: var(--radius);
+}
+
+.phones-editor li > .icon-button {
+  align-self: flex-start;
+}
+
+/* Adding a phone (2.8).
+ *
+ * A column, not a row. It was one line: a squeezed number field, the kind and
+ * the button, which left about eleven characters of room for a number that is
+ * thirteen long at the end - a field that is too narrow is a field a person
+ * gives up on. The button keeps its own line and stays left-aligned with the
+ * fields above it rather than floating in the middle of nowhere. */
 .contacts-add {
   display: flex;
+  flex-direction: column;
   gap: var(--space-2);
-  align-items: flex-end;
   margin-top: var(--space-3);
 }
 
 .contacts-add .field {
-  flex: 1 1 14rem;
   margin: 0;
+}
+
+/* A number, its country and what it is for, side by side.
+ *
+ * The number is the wide one because a masked number is long and gets longer as
+ * it is typed; the country and the kind are two short lists and share the line
+ * under it. */
+.phone-fields {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.phone-fields .field {
+  margin: 0;
+}
+
+.phone-fields__number {
+  flex: 1 1 auto;
+}
+
+.phone-fields__below {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.phone-fields__country {
+  flex: 1 1 0;
+}
+
+.phone-fields__kind {
+  flex: 1 1 0;
+}
+
+/* A number with its kind, as read rather than edited. */
+.phone-line {
+  white-space: nowrap;
 }
 
 /* A checkbox with its sentence beside it, rather than above it. */

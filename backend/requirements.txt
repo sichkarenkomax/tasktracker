@@ -16,3 +16,7 @@ alembic>=1.14,<1.15
 greenlet>=3.1,<4.0
 PyJWT>=2.9,<3.0
 pwdlib[argon2]>=0.2,<1.0
+# Phone numbers are validated and stored in E.164, not in whatever shape they
+# were typed in. This is metadata only - no network, no SMS, no lookups of any
+# kind - so the dependency is safe to keep for an intranet install (stage 2.8).
+phonenumbers>=9.0,<10.0

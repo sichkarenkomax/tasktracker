@@ -32,18 +32,42 @@ async def _make_admin(user_id: str) -> None:
 
 
 class TestUserDirectory:
-    async def test_a_plain_account_lists_the_directory(
+    async def test_the_directory_is_for_portal_administrators_only(
         self, client: AsyncClient, owner: dict[str, Any]
     ) -> None:
-        """The directory is open to every signed-in account; what stays guarded
-        is granting rights, not looking at the list."""
-        stranger = await register_user(client, prefix="stranger")
+        """The installation's account list, once open to anyone, now is not.
 
+        It hands out every account's address across every tenant, and stage 2.6
+        gave people the right to withhold exactly that. What answers "who is
+        here" for an ordinary member is ``GET /organizations/{id}/people``, which
+        is one organization's roster with the contacts rules applied.
+        """
         response = await client.get("/api/v1/users", headers=auth_headers(owner["token"]))
 
+        assert response.status_code == 403
+        assert "administrator" in response.json()["error"]["message"].lower()
+
+    async def test_a_merged_people_list_is_where_a_member_looks_instead(
+        self, client: AsyncClient, owner: dict[str, Any]
+    ) -> None:
+        """The replacement exists and answers the same question inside one tenant."""
+        stranger = await register_user(client, prefix="stranger")
+        await client.post(
+            f"/api/v1/organizations/{owner['organization']['id']}/members",
+            json={"email": stranger["user"]["email"], "role": "member"},
+            headers=auth_headers(owner["token"]),
+        )
+
+        response = await client.get(
+            f"/api/v1/organizations/{owner['organization']['id']}/people",
+            headers=auth_headers(owner["token"]),
+        )
+
         assert response.status_code == 200
-        emails = {item["email"] for item in response.json()["items"]}
-        assert stranger["user"]["email"] in emails
+        assert {row["username"] for row in response.json()["items"]} >= {
+            owner["user"]["username"],
+            stranger["user"]["username"],
+        }
 
     async def test_an_administrator_lists_every_account(
         self, client: AsyncClient, owner: dict[str, Any]

@@ -15,6 +15,10 @@ import { useOrganization } from '../../core/organizations/OrganizationContext'
 import { personalSettingsApi } from '../../core/settings/api'
 import { Listbox } from '../../core/ui/Listbox'
 import { Avatar } from '../../core/users/Avatar'
+import { NEW_PHONE, PhoneFields, PhoneLine } from '../../core/users/PhoneFields'
+import type { PhoneDraft } from '../../core/users/PhoneFields'
+import { isValidPhone } from '../../core/users/phoneMask'
+import type { PhoneKind } from '../../core/users/phoneMask'
 import { usersApi } from '../../core/users/api'
 
 /**
@@ -210,7 +214,9 @@ function ContactsPanel() {
   const { user, refresh } = useAuth()
   const { current: organization } = useOrganization()
   const organizationId = organization?.id ?? null
-  const [draft, setDraft] = useState('')
+  // The number and its kind are one draft: a person who typed a number and picked
+  // "home" is describing one thing, and two states would let them save half of it.
+  const [draft, setDraft] = useState<PhoneDraft>(NEW_PHONE)
   const [error, setError] = useState<string | null>(null)
 
   const phones = useAsync(() => (organizationId ? usersApi.phones() : Promise.resolve([])), [
@@ -236,7 +242,10 @@ function ContactsPanel() {
     await refresh()
   })
 
-  const addPhone = useMutation<{ number: string; comment: string | null }, void>(async (input) => {
+  const addPhone = useMutation<
+    { number: string; kind: PhoneKind; country: string | null },
+    void
+  >(async (input) => {
     await usersApi.addPhone(input)
   })
 
@@ -293,10 +302,7 @@ function ContactsPanel() {
         <ul className="org__list">
           {rows.map((phone) => (
             <li key={phone.id}>
-              <span>
-                {phone.number}
-                {phone.comment ? <span className="muted"> — {phone.comment}</span> : null}
-              </span>
+              <PhoneLine number={phone.number} kind={phone.kind} />
               <button
                 type="button"
                 className="icon-button"
@@ -321,28 +327,26 @@ function ContactsPanel() {
         onSubmit={async (event) => {
           event.preventDefault()
           setError(null)
-          const done = await addPhone.run({
-            number: draft.trim(),
-            comment: null,
-          })
+          const done = await addPhone.run(draft)
           if (done !== null) {
-            setDraft('')
+            setDraft(NEW_PHONE)
             phones.reload()
           } else {
             setError(addPhone.error)
           }
         }}
       >
-        <label className="field">
-          <span>{t('profile.addPhone')}</span>
-          <input
-            type="tel"
-            maxLength={32}
-            value={draft}
-            onChange={(event) => setDraft(event.target.value)}
-          />
-        </label>
-        <button type="submit" className="button" disabled={addPhone.pending || draft.trim() === ''}>
+        <PhoneFields
+          value={draft}
+          onChange={setDraft}
+          disabled={addPhone.pending}
+          numberPlaceholder={t('profile.phoneNumber')}
+        />
+        <button
+          type="submit"
+          className="button"
+          disabled={addPhone.pending || !isValidPhone(draft.number, draft.country)}
+        >
           {t('profile.add')}
         </button>
       </form>

@@ -10,6 +10,8 @@ from datetime import UTC, date, datetime
 from typing import TYPE_CHECKING
 from uuid import UUID
 
+import phonenumbers
+
 from app.core.auth.passwords import hash_password, rehash_if_needed, verify_password
 from app.core.errors import (
     ConflictError,
@@ -23,8 +25,9 @@ from app.core.events.names import (
     USER_PASSWORD_CHANGED,
     USER_PROFILE_UPDATED,
     USER_REGISTERED,
+    USER_STATUS_CHANGED,
 )
-from app.core.users.models import User, UserPhone, UserStatus
+from app.core.users.models import PhoneKind, User, UserPhone, UserStatus
 from app.core.users.repository import UserPhoneRepository, UserRepository
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -37,6 +40,72 @@ def _clean(value: str | None) -> str | None:
         return None
     trimmed = value.strip()
     return trimmed or None
+
+
+def normalize_phone(number: str, country: str | None = None) -> tuple[str, str | None]:
+    """The number as it is stored: E.164, and the country it was read in.
+
+    This is Google's libphonenumber data, ported to Python - a local table of
+    how numbers are written, with no network calls and nothing sent anywhere. It
+    is the only thing standing between "eleven digits" and "a phone number", and
+    the reason the check lives here and not in the browser: a direct call to the
+    API is not obliged to pass through a form.
+
+    ``country`` is the two letters the person chose in the UI, and it is what
+    makes a *national* number ("8 900 123-45-67") parseable. Without it, and
+    without a leading plus, the answer is a refusal rather than a guess: we do not
+    know which country those digits belong to, and the wrong one produces a
+    number that rings somebody else.
+    """
+    cleaned = "".join(character for character in number if character.isdigit() or character == "+")
+    # A plus in the middle is a typo rather than a country prefix; keep the first
+    # one and drop the rest so "+7 (900) +1 23" still stores a usable number.
+    digits = cleaned.lstrip("+")
+    if not 5 <= len(digits) <= 20:
+        # Checked before the library so a paste accident gets the message about
+        # length rather than about a country nobody mentioned.
+        raise ValidationError(
+            "A phone number needs between 5 and 20 digits",
+            details={"field": "number", "digits": len(digits)},
+        )
+
+    region = _region(country)
+    if region is None and not cleaned.startswith("+"):
+        raise ValidationError(
+            "A national number needs its country, and an international one needs a +",
+            details={"field": "country"},
+        )
+    try:
+        parsed = phonenumbers.parse(cleaned, region)
+    except phonenumbers.NumberParseException as cause:
+        raise ValidationError(
+            "This is not a phone number I can read",
+            details={"field": "number", "reason": str(cause)},
+        ) from cause
+    if not phonenumbers.is_possible_number(parsed):
+        raise ValidationError(
+            "This is not a possible phone number",
+            details={"field": "number", "country": country},
+        )
+    if not phonenumbers.is_valid_number(parsed):
+        raise ValidationError(
+            "This phone number is not a real one",
+            details={"field": "number", "country": country},
+        )
+    return phonenumbers.format_number(parsed, phonenumbers.PhoneNumberFormat.E164), country
+
+
+def _region(country: str | None) -> str | None:
+    """The two letters as libphonenumber wants them, or None if they are no use.
+
+    An unknown country is dropped rather than refused here: a number written
+    with a ``+`` does not need one, and failing a row whose country was never
+    recorded would make old data unreadable rather than international.
+    """
+    if country is None or not country.strip():
+        return None
+    code = country.strip().upper()
+    return code if code in phonenumbers.SUPPORTED_REGIONS else None
 
 
 class UserService:
@@ -164,8 +233,24 @@ class UserService:
     async def list_phones(self, user: User) -> list[UserPhone]:
         return await self._phones.list_for(user.id)
 
-    async def add_phone(self, user: User, *, number: str, comment: str | None = None) -> UserPhone:
-        phone = UserPhone(user_id=user.id, number=number.strip(), comment=_clean(comment))
+    async def add_phone(
+        self,
+        user: User,
+        *,
+        number: str,
+        kind: PhoneKind = PhoneKind.WORK,
+        country: str | None = None,
+    ) -> UserPhone:
+        stored_number, stored_country = normalize_phone(number, country)
+        # One person, one row per number. Two rows for the same number look like
+        # a mistake from the outside - "work and mobile, same digits" - and they
+        # hide each other from every list keyed by number, including the one in
+        # `replace_phones`. The kind of a number is edited where it lives, not by
+        # adding a second copy of it.
+        existing = await self._phones.list_for(user.id)
+        if any(phone.number == stored_number for phone in existing):
+            raise ConflictError("This number is already on the profile")
+        phone = UserPhone(user_id=user.id, number=stored_number, kind=kind, country=stored_country)
         stored = await self._phones.add(phone)
         await self._bus.publish_event(
             USER_PROFILE_UPDATED,
@@ -175,16 +260,82 @@ class UserService:
         return stored
 
     async def update_phone(
-        self, user: User, *, phone: UserPhone, number: str, comment: str | None = None
+        self, user: User, *, phone: UserPhone, number: str, kind: PhoneKind, country: str | None
     ) -> UserPhone:
-        phone.number = number.strip()
-        phone.comment = _clean(comment)
+        stored_number, stored_country = normalize_phone(number, country)
+        # The same rule as on adding, with this row itself taken out of the way:
+        # renaming a number to itself is not a duplicate.
+        if any(
+            other.number == stored_number and other.id != phone.id
+            for other in await self._phones.list_for(user.id)
+        ):
+            raise ConflictError("This number is already on the profile")
+        phone.number = stored_number
+        phone.country = stored_country
+        phone.kind = kind
         await self._bus.publish_event(
             USER_PROFILE_UPDATED,
             actor_id=user.id,
             payload={"user_id": str(user.id), "summary": f"{user.username} updated their profile"},
         )
         return phone
+
+    async def replace_phones(
+        self, user: User, *, numbers: list[tuple[str, PhoneKind, str | None]]
+    ) -> list[UserPhone]:
+        """An administrator writes somebody else's whole set of numbers.
+
+        A full replacement rather than add/remove calls, for the same reason the
+        profile editor is one route: three requests leave the person with half
+        of what the administrator typed, and a list is the only shape that can be
+        checked before anything is written. Rows the administrator did not list
+        are removed - which is what "the set is these three" means.
+
+        The ids are preserved where a row already exists, so a number nobody
+        touched keeps its place and its row id, and a notification about it
+        (stage 5) keeps pointing at the same thing.
+        """
+        # Everything is normalized first: one impossible number in the list
+        # refuses the whole request, rather than leaving the person with the
+        # first two numbers written and the third not.
+        normalized = [normalize_phone(number, country) for number, _kind, country in numbers]
+        stored = {
+            number: (country, kind)
+            for (number, country), (_number, kind, _country) in zip(
+                normalized, numbers, strict=True
+            )
+        }
+        # Walked as a list, not as a dict keyed by the number. Two rows for one
+        # number can only be a leftover from before the unique index, but a
+        # replacement that silently left one of them behind would be a bug in
+        # this method rather than in the data, so the second row is deleted
+        # here too.
+        existing = await self._phones.list_for(user.id)
+        consumed: set[str] = set()
+        for phone in existing:
+            entry = stored.get(phone.number)
+            if entry is None or phone.number in consumed:
+                await self._phones.delete(phone)
+                continue
+            consumed.add(phone.number)
+            phone.country, phone.kind = entry
+
+        for number, (country, kind) in stored.items():
+            if number not in consumed:
+                await self._phones.add(
+                    UserPhone(user_id=user.id, number=number, kind=kind, country=country)
+                )
+
+        if numbers:
+            await self._bus.publish_event(
+                USER_PROFILE_UPDATED,
+                actor_id=user.id,
+                payload={
+                    "user_id": str(user.id),
+                    "summary": f"{user.username} updated their profile",
+                },
+            )
+        return await self._phones.list_for(user.id)
 
     async def delete_phone(self, user: User, *, phone: UserPhone) -> None:
         await self._phones.delete(phone)
@@ -193,6 +344,38 @@ class UserService:
             actor_id=user.id,
             payload={"user_id": str(user.id), "summary": f"{user.username} updated their profile"},
         )
+
+    async def set_status(
+        self, *, target: User, status: UserStatus, actor: User, organization_id: UUID
+    ) -> User:
+        """Lock or unlock an account (stage 2.18).
+
+        A disabled account stops signing in everywhere, not only here, which is
+        why the caller has to be a portal administrator rather than the owner of
+        one organization: an administrator of one tenant must not be able to lock
+        somebody out of another one.
+
+        The event carries both the organization that asked and the account, so
+        the trail is readable from either side. No letter: v1 sends none, which
+        leaves the activity feed as how the person finds out that their login
+        stopped working.
+        """
+        previous = target.status
+        target.status = status
+        await self._bus.publish_event(
+            USER_STATUS_CHANGED,
+            actor_id=actor.id,
+            payload={
+                "user_id": str(target.id),
+                "organization_id": str(organization_id),
+                "from_status": str(previous),
+                "to_status": str(status),
+                "summary": (
+                    f"{actor.username} set {target.username}'s status: {previous} -> {status}"
+                ),
+            },
+        )
+        return target
 
     async def change_email(
         self, *, target: User, actor: User, organization_id: UUID, email: str

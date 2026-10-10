@@ -11,6 +11,8 @@ from dataclasses import field as dataclass_field
 from typing import TYPE_CHECKING, Final
 from uuid import UUID
 
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.core.errors import ConflictError, NotFoundError, ValidationError
 from app.core.events.names import (
     ORG_DEPARTMENT_CREATED,
@@ -54,6 +56,26 @@ from app.core.users.repository import UserRepository
 
 if TYPE_CHECKING:  # pragma: no cover
     from app.core.events.bus import EventBus
+
+
+def organization_service(session: AsyncSession, bus: EventBus) -> OrganizationService:
+    """The wiring, in one place.
+
+    Both routers that build these services need the same five repositories, and
+    a second copy of this list is a second thing to forget when a dependency is
+    added - which shows up as a service that quietly reads nothing.
+    """
+    return OrganizationService(OrganizationRepository(session), UserRepository(session), bus)
+
+
+def org_structure_service(session: AsyncSession, bus: EventBus) -> OrgStructureService:
+    return OrgStructureService(
+        DepartmentRepository(session),
+        PositionRepository(session),
+        DeputyRepository(session),
+        OrganizationRepository(session),
+        bus,
+    )
 
 
 @dataclass(frozen=True, slots=True)

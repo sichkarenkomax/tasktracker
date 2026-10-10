@@ -24,6 +24,18 @@ export interface Capabilities {
    * Reading the chart is not one of these: everybody may look at it.
    */
   canEditOrgStructure: boolean
+  /**
+   * May change another member's account data (name, address, birthday) and
+   * their role in this organization.
+   *
+   * `user.update` is the server's permission for the first group, and the role
+   * additionally needs a strictly higher rank than the target - a rule the API
+   * applies and the UI cannot, so the editor still refuses a refused save
+   * rather than hiding every case.
+   */
+  canUpdateUser: boolean
+  /** May hand out a role in this organization. */
+  canManageMembers: boolean
 }
 
 const VIEWER: Capabilities = {
@@ -33,6 +45,8 @@ const VIEWER: Capabilities = {
   canComment: false,
   canDeleteTask: false,
   canEditOrgStructure: false,
+  canUpdateUser: false,
+  canManageMembers: false,
 }
 
 const MEMBER: Capabilities = {
@@ -48,6 +62,8 @@ const ADMIN: Capabilities = {
   role: 'admin',
   canDeleteTask: true,
   canEditOrgStructure: true,
+  canUpdateUser: true,
+  canManageMembers: true,
 }
 
 const OWNER: Capabilities = { ...ADMIN, role: 'owner' }

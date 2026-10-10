@@ -99,6 +99,14 @@ class OrganizationRepository:
         rows: list[tuple[Any, ...]] = await fetch_pairs(self._session, statement)
         return [(row[0], row[1], row[2]) for row in rows]
 
+    async def count_members(self, organization_id: UUID) -> int:
+        statement = (
+            select(func.count())
+            .select_from(OrganizationMember)
+            .where(OrganizationMember.organization_id == organization_id)
+        )
+        return await count(self._session, statement)
+
     async def list_for_user(self, user_id: UUID) -> list[tuple[Organization, OrganizationMember]]:
         statement = (
             select(Organization, OrganizationMember)
