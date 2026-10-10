@@ -61,7 +61,7 @@ from app.core.permissions.dependencies import require_permission
 from app.core.permissions.roles import OrganizationRole
 from app.core.permissions.service import AuthorizationService
 from app.core.users.models import User
-from app.core.users.visibility import ContactsVisibility
+from app.core.users.visibility import contacts_visibility, presence_visibility
 
 router = APIRouter(tags=["organizations"])
 
@@ -232,19 +232,27 @@ async def list_people(
     )
     result = await PeopleRepository(session).page(organization_id, query)
 
-    visibility = ContactsVisibility(session)
+    visibility = contacts_visibility(session)
+    seen = presence_visibility(session)
     viewer_role = await AuthorizationService(session).require_member(
         user=user, organization_id=organization_id
     )
 
+    # Once per page rather than once per row: the roster is read far more often
+    # than it changes, and a list that asks the database four times for each of
+    # twenty-five rows is a list whose slowness is blamed on the wrong thing.
+    ids = [row.user.id for row in result.rows]
+    may_see_contacts = await visibility.viewer_may_see_many(
+        viewer=user, person_ids=ids, organization_id=organization_id, viewer_role=viewer_role
+    )
+    may_see_presence = await seen.viewer_may_see_many(
+        viewer=user, person_ids=ids, organization_id=organization_id, viewer_role=viewer_role
+    )
+
     items: list[PersonRead] = []
     for row in result.rows:
-        may_see = await visibility.viewer_may_see(
-            viewer=user,
-            person_id=row.user.id,
-            organization_id=organization_id,
-            viewer_role=viewer_role,
-        )
+        may_see = may_see_contacts.get(row.user.id, True)
+        may_see_presence_row = may_see_presence.get(row.user.id, True)
         items.append(
             PersonRead(
                 id=row.user.id,
@@ -257,7 +265,12 @@ async def list_people(
                 # never blanked - only the address, which is the contact.
                 email=row.user.email if may_see else None,
                 status=str(row.user.status),
-                last_login_at=row.user.last_login_at,
+                # Presence is the person's own answer about themselves (2.9), and
+                # `last_login_at` goes with it: the sign-in time is the same fact
+                # written a week earlier.
+                last_login_at=row.user.last_login_at if may_see_presence_row else None,
+                last_seen=row.user.last_seen if may_see_presence_row else None,
+                last_seen_visible=may_see_presence_row,
                 created_at=row.user.created_at,
                 birthday=row.user.birthday.isoformat() if row.user.birthday else None,
                 contacts_visible=may_see,

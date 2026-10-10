@@ -2532,36 +2532,84 @@ textarea {
 
 /* -------------------------------------------------------------- columns --- */
 
-.column-settings {
-  width: 16rem;
-  padding: var(--space-3);
+/* The popover itself.
+ *
+ * One place for what every floating panel looks like, because there were already
+ * two copies of these eight lines - `.listbox__menu` and `.datefield__menu` -
+ * that had drifted apart on the border radius and were about to become a third.
+ * `z-index: 30` is the project's popover level; the positioning itself arrives
+ * as inline `top`/`left` from `Popover.tsx`, measured against the trigger. */
+.popover {
+  z-index: 30;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   background: var(--surface-raised);
   border: 1px solid var(--surface-02-border);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-md);
   box-shadow: var(--shadow-lg);
 }
 
+/* The panel has focus while it is open, so that Escape works from the first
+   keypress and Tab can leave it. The outline is only shown for a keyboard user:
+   a ring around a panel the reader did not click would be a rectangle drawn
+   around the whole page's furniture. */
+.popover:focus {
+  outline: none;
+}
+
+.popover:focus-visible {
+  outline: 2px solid var(--link);
+  outline-offset: 1px;
+}
+
+/* Layout only: the surface, the border and the shadow belong to `.popover`. */
+.column-settings {
+  width: 20rem;
+  max-width: calc(100vw - 1rem);
+  padding: var(--space-3);
+}
+
+/* The panel's own title, with the reset link beside it.
+ *
+ * This rule used to make the head itself small, uppercase and muted, which put
+ * the "reset" button on its own line under a heading wearing a section's
+ * lettering: the heading of the panel was dressed as a caption inside it. */
 .column-settings__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
   margin-bottom: var(--space-2);
-  color: var(--text-muted);
-  font-size: 0.75rem;
+}
+
+.column-settings__head h2 {
+  margin: 0;
+  color: var(--text);
+  font-size: 0.9375rem;
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  text-transform: none;
+  letter-spacing: normal;
 }
 
 .column-settings__list {
   list-style: none;
   margin: 0;
   padding: 0;
+  /* A gap of 1px, not `var(--space-1)`: the rows are a single control, and
+     floating them apart with air between them makes the list read as a set of
+     unrelated chips instead of one ordered thing to reorder. */
+  display: grid;
+  gap: 1px;
 }
 
 .column-settings__item {
   display: flex;
   gap: var(--space-2);
   align-items: center;
-  height: 1.75rem;
-  padding: 0 var(--space-2);
+  /* A minimum rather than the fixed height it had: three buttons stacked
+     vertically inside a 1.75rem row overflowed onto the rows below them. */
+  min-height: 2rem;
+  padding: var(--space-1) var(--space-2);
   border-radius: var(--radius);
   background: none;
   color: var(--text);
@@ -2580,32 +2628,51 @@ textarea {
 .column-settings__grip {
   display: grid;
   place-items: center;
+  flex: none;
   color: var(--text-faint);
   cursor: grab;
 }
 
 .column-settings__label {
-  flex: 1;
+  flex: 1 1 auto;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   text-align: left;
 }
 
+/* The three buttons in a row, beside the name.
+ *
+ * They were stacked in a column, which is what put them on top of each other:
+ * three of them are taller than the row they live in. Beside the name they take
+ * a fixed strip and the name takes what is left. */
 .column-settings__move {
   display: flex;
-  flex-direction: column;
+  flex: none;
+  align-items: center;
+  gap: 1px;
 }
 
 .column-settings__move .icon-button {
-  width: 1.25rem;
-  height: 1.125rem;
+  width: 1.5rem;
+  height: 1.5rem;
 }
 
+.column-settings__chevron-up {
+  transform: rotate(180deg);
+}
+
+/* The row under the list: which columns are available to add back. */
 .column-settings__hidden {
   margin-top: var(--space-3);
   padding-top: var(--space-3);
   border-top: 1px solid var(--divider);
+}
+
+.column-settings__hidden > .muted {
+  display: block;
+  margin-bottom: var(--space-2);
 }
 
 .column-settings__chips {
@@ -2664,6 +2731,63 @@ textarea {
 
 .people__name:hover {
   color: var(--link);
+}
+
+/* Presence (2.9).
+ *
+ * A dot and a word, not a colour applied to the name: the roster is scanned for
+ * one column, and a green name invites the reader to ask the browser what the
+ * colour means. The dot is 0.5rem because at 0.25 it reads as a speck of dust
+ * on the screen rather than as an answer. */
+.presence {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  white-space: nowrap;
+}
+
+.presence__dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: var(--ok);
+  flex: none;
+}
+
+/* The dot on the picture itself (2.9).
+ *
+ * Bottom right, half outside the circle, with a ring in the page's own
+ * background: the alternative - a dot beside the name - reads as part of the
+ * name, and a dot *inside* the face covers whatever the face was saying. */
+.people__avatar {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+}
+
+.presence-dot {
+  position: absolute;
+  right: -0.125rem;
+  bottom: -0.125rem;
+  width: 0.625rem;
+  height: 0.625rem;
+  border-radius: 50%;
+  background: var(--ok);
+  /* The ring is the row's own background, because the roster is striped: a
+     ring in the wrong colour draws a small square of another shade around the
+     dot on every second row. Odd rows are `--surface`, even ones `--table-row`,
+     and on hover the row goes `--nav-active`. */
+  box-shadow: 0 0 0 2px var(--surface);
+  flex: none;
+}
+
+.table tbody tr:nth-child(even) .presence-dot {
+  box-shadow: 0 0 0 2px var(--table-row);
+}
+
+.table tbody tr:hover .presence-dot,
+.table tbody tr:nth-child(even):hover .presence-dot {
+  box-shadow: 0 0 0 2px var(--nav-active);
 }
 
 /* The face answers the hover too: a ring rather than an underline, so the row

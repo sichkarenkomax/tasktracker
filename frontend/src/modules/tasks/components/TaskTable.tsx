@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 
 import { formatDateTime, isOverdue, plural } from '../../../core/format'
@@ -50,6 +50,9 @@ export function TaskTable({
   const set = columnSet(t)
   const [columns, setColumns] = useState<ColumnId[]>(() => taskColumns(t))
   const [configuring, setConfiguring] = useState(false)
+  // The chooser floats above the table, anchored to this button, and hands the
+  // focus back to it when it closes.
+  const columnsButton = useRef<HTMLButtonElement>(null)
 
   // A project-scoped list cannot usefully show the project, so it is dropped
   // rather than rendered as the same value on every row.
@@ -107,10 +110,12 @@ export function TaskTable({
   return (
     <>
       <div className="table-toolbar">
-        <button
+<button
           type="button"
           className="button button--ghost"
+          ref={columnsButton}
           aria-expanded={configuring}
+          aria-haspopup="dialog"
           onClick={() => setConfiguring((open) => !open)}
         >
           <Icon name="columns" size={15} />
@@ -119,7 +124,13 @@ export function TaskTable({
       </div>
 
       {configuring ? (
-        <ColumnSettingsPanel set={set} columns={columns} onChange={applyColumns} />
+        <ColumnSettingsPanel
+          set={set}
+          columns={columns}
+          onChange={applyColumns}
+          anchorRef={columnsButton}
+          onClose={() => setConfiguring(false)}
+        />
       ) : null}
 
       <div className="table-scroll">

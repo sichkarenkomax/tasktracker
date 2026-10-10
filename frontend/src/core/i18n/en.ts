@@ -411,7 +411,8 @@ export const en = {
   'people.column.manager': 'Manager',
   'people.column.role': 'Role',
   'people.column.status': 'Status',
-  'people.column.lastLogin': 'Last seen',
+  'people.column.lastLogin': 'Last signed in',
+  'people.column.lastSeen': 'Last seen',
   'people.status.active': 'Active',
   'people.status.invited': 'Invited',
   'people.status.disabled': 'Blocked',
@@ -466,6 +467,14 @@ export const en = {
   'profile.noContacts': 'Nothing to show here yet.',
   'profile.contactsHidden': 'This person keeps their contacts to themselves and the administrators.',
   'profile.lastSeen': 'Last signed in',
+  'profile.presence': 'Here now',
+  'profile.presenceOnline': 'here now',
+  'profile.presenceHidden': 'This person keeps their presence to themselves.',
+  'profile.presenceLastSeenTitle': 'When they were last here',
+  'profile.presenceVisibility': 'Who sees that you were here',
+  'profile.presenceVisibilityHint':
+    'Your colleagues see a dot while you are working and how long ago you were here afterwards. It follows your activity, not your status.',
+  'profile.presenceLocked': 'This portal decides who sees presence, so the choice is not yours here.',
   'profile.messageTitle': 'Write a message',
   'profile.messageLater': 'Messaging arrives with chat, in stage 8.',
   'profile.editOwn': 'Edit your own profile',
@@ -482,6 +491,10 @@ export const en = {
     'Who may read a member`s email, phones and birthday. The name, department, position and picture are always visible to the organization - they are how you find out who to ask.',
   'settings.contactsVisibility': 'For members who did not choose',
   'settings.contactsSelfService': 'Let members decide for themselves',
+  'settings.presence': 'Presence',
+  'settings.presenceHint':
+    'Who may see when a member was last here. Updated from their own activity - no heartbeat, nothing to install and nothing to keep switched on.',
+  'settings.presenceSelfService': 'Let members decide for themselves',
 
   // --- errors -----------------------------------------------------------
   'error.generic': 'Something went wrong.',

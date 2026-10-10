@@ -121,7 +121,22 @@ function Settings() {
       : 'everyone')
   const contactsSelfService =
     contactsDraft?.selfService ?? storedValues?.contacts_self_service !== false
-  const saveContacts = useMutation<Record<string, unknown>, void>(async (values) => {
+
+  // Presence (stage 2.9). The same two questions as the contacts above, on
+  // different keys - and deliberately *not* the same keys: an installation that
+  // wants phone numbers private still wants to know who is at a desk.
+  const [presenceDraft, setPresenceDraft] = useState<{
+    visibility: string
+    selfService: boolean
+  } | null>(null)
+  const presenceVisibility =
+    presenceDraft?.visibility ??
+    (typeof storedValues?.last_seen_visibility === 'string'
+      ? storedValues.last_seen_visibility
+      : 'everyone')
+  const presenceSelfService =
+    presenceDraft?.selfService ?? storedValues?.last_seen_self_service !== false
+  const saveProfileSettings = useMutation<Record<string, unknown>, void>(async (values) => {
     if (!organizationId) return
     await organizationsApi.updateSettings(organizationId, values)
   })
@@ -333,14 +348,14 @@ function Settings() {
           onSubmit={async (event) => {
             event.preventDefault()
             setFileError(null)
-            const done = await saveContacts.run({
+            const done = await saveProfileSettings.run({
               contacts_visibility: contactsVisibility,
               contacts_self_service: contactsSelfService,
             })
             if (done !== null) {
               setContactsDraft(null)
               reload()
-            } else setFileError(saveContacts.error)
+            } else setFileError(saveProfileSettings.error)
           }}
         >
           <div className="fields">
@@ -379,9 +394,71 @@ function Settings() {
               <button
                 type="submit"
                 className="button button--primary"
-                disabled={saveContacts.pending}
+                disabled={saveProfileSettings.pending}
               >
-                {saveContacts.pending ? t('app.saving') : t('app.save')}
+                {saveProfileSettings.pending ? t('app.saving') : t('app.save')}
+              </button>
+            </div>
+          ) : null}
+        </form>
+      </section>
+
+      <section className="panel">
+        <h2>{t('settings.presence')}</h2>
+        <p className="muted">{t('settings.presenceHint')}</p>
+        <form
+          onSubmit={async (event) => {
+            event.preventDefault()
+            setFileError(null)
+            const done = await saveProfileSettings.run({
+              last_seen_visibility: presenceVisibility,
+              last_seen_self_service: presenceSelfService,
+            })
+            if (done !== null) {
+              setPresenceDraft(null)
+              reload()
+            } else setFileError(saveProfileSettings.error)
+          }}
+        >
+          <div className="fields">
+            <label className="field">
+              <span>{t('settings.contactsVisibility')}</span>
+              <Listbox<string>
+                value={presenceVisibility}
+                options={[
+                  { value: 'everyone', label: t('profile.visibilityEveryone') },
+                  { value: 'admins', label: t('profile.visibilityAdmins') },
+                ]}
+                disabled={!mayEdit}
+                onChange={(next) => {
+                  if (next === null) return
+                  setPresenceDraft({ visibility: next, selfService: presenceSelfService })
+                }}
+              />
+            </label>
+            <label className="field checkbox">
+              <input
+                type="checkbox"
+                checked={presenceSelfService}
+                disabled={!mayEdit}
+                onChange={(event) =>
+                  setPresenceDraft({
+                    visibility: presenceVisibility,
+                    selfService: event.target.checked,
+                  })
+                }
+              />
+              <span>{t('settings.presenceSelfService')}</span>
+            </label>
+          </div>
+          {mayEdit ? (
+            <div className="create-form__actions">
+              <button
+                type="submit"
+                className="button button--primary"
+                disabled={saveProfileSettings.pending}
+              >
+                {saveProfileSettings.pending ? t('app.saving') : t('app.save')}
               </button>
             </div>
           ) : null}

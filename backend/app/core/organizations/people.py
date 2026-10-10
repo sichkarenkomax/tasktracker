@@ -59,6 +59,10 @@ SORT_COLUMNS: dict[str, InstrumentedAttribute[Any]] = {
     "status": User.status,
     "created_at": User.created_at,
     "last_login_at": User.last_login_at,
+    # Presence (stage 2.9). Sortable next to the login time because they disagree:
+    # "who was here this morning" is the question a roster is asked, and sorting
+    # by sign-in time answers a different one.
+    "last_seen": User.last_seen,
 }
 
 

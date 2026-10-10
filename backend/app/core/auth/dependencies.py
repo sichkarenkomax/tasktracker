@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import get_settings
 from app.core.auth.tokens import decode_access_token
 from app.core.errors import AuthenticationError
+from app.core.users import presence
 from app.core.users.models import User
 from app.database.session import get_session
 
@@ -49,6 +50,11 @@ async def get_current_user(
     user = await session.get(User, claims.user_id)
     if user is None:
         raise AuthenticationError("Account no longer exists")
+    # "Last seen" is written here because this is the one place every
+    # authenticated request passes through (stage 2.9). The function is
+    # throttled to one write a minute per person, so the cost is bounded no
+    # matter how many rows a screen renders.
+    await presence.record(user, session)
     request.state.user = user
     return user
 

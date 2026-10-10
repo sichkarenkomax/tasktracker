@@ -81,6 +81,14 @@ class User(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
+    #: When they were last *here* - the last request they made, not the last
+    #: password they proved (stage 2.9). Written from ordinary API traffic,
+    #: throttled to once a minute per person, and read by nobody who has not
+    #: answered for it first: who may see it is the same question as who may see
+    #: the contacts, with the same two settings deciding (see
+    #: `users.visibility.Visibility`).
+    last_seen: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
     __table_args__ = (Index("ix_users_status", "status"),)
 
     def __repr__(self) -> str:

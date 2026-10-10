@@ -57,6 +57,21 @@ SETTING_DEFINITIONS: dict[str, dict[str, Any]] = {
     # own `contacts_visibility` governs and a stored personal value is ignored
     # rather than silently winning.
     "contacts_self_service": {"type": "boolean", "default": True},
+    # Presence (stage 2.9): who may read "last seen". The same two answers as
+    # the contacts, and the same reasoning for the default: a self-hosted portal
+    # is a team's own installation, and "when was this person here" is what a
+    # colleague asks before writing to somebody at all. It is not more sensitive
+    # than a phone number, and it is asked more often.
+    "last_seen_visibility": {
+        "type": "string",
+        "default": "everyone",
+        "values": ["everyone", "admins"],
+    },
+    # Whether a person may hide their own presence. Same division as
+    # `contacts_self_service`, and with it off the portal's value governs and a
+    # stored personal one is refused rather than silently winning - see
+    # `PORTAL_CONTROLLED_PERSONAL_SETTINGS`.
+    "last_seen_self_service": {"type": "boolean", "default": True},
 }
 
 #: Personal settings, the same contract one level down: a key declared here is a
@@ -96,8 +111,17 @@ PERSONAL_SETTING_DEFINITIONS: dict[str, dict[str, Any]] = {
     # Personal, because the portal setting only decides whether they are *allowed*
     # to answer. As with the date format, the default here is what an untouched
     # key reads as and only a stored value counts as an opinion - see
-    # `users.visibility.ContactsVisibility`, which is where the two are combined.
+    # `users.visibility.Visibility`, which is where the two are combined.
     "contacts_visibility": {
+        "type": "string",
+        "default": "everyone",
+        "values": ["everyone", "admins"],
+    },
+    # A person's own answer to "who may see that I was here" (stage 2.9).
+    # Written here, and refused on write when the portal has taken the choice
+    # away. The answer the roadmap question settled: this is a per-person setting,
+    # and the portal decides only whether they are allowed to have one.
+    "last_seen_visibility": {
         "type": "string",
         "default": "everyone",
         "values": ["everyone", "admins"],
@@ -173,9 +197,10 @@ def personal_definitions() -> dict[str, dict[str, Any]]:
 #: off, the portal decides and the personal row is refused on write - not ignored
 #: on read, because a value that was accepted and then quietly disregarded is
 #: worse than one that was never taken. The read side lives in
-#: `users.visibility.ContactsVisibility`, which is where the two are combined.
+#: `users.visibility.Visibility`, which is where the two are combined.
 PORTAL_CONTROLLED_PERSONAL_SETTINGS: dict[str, str] = {
     "contacts_visibility": "contacts_self_service",
+    "last_seen_visibility": "last_seen_self_service",
 }
 
 
@@ -215,6 +240,29 @@ class PersonalSettingsService:
         )
         rows = (await self._session.scalars(stmt)).all()
         return {row.key: row.value for row in rows}
+
+    async def stored_many(
+        self, organization_id: UUID, user_ids: list[UUID]
+    ) -> dict[UUID, dict[str, Any]]:
+        """Several people's stored answers in one query.
+
+        The list screens need this per page rather than per row: a roster of
+        twenty-five asking the database twenty-five times is the difference
+        between one screen and fifty. The result is keyed by user id, and a
+        person with nothing stored is simply absent - which is what "no opinion"
+        looks like from here.
+        """
+        if not user_ids:
+            return {}
+        stmt = select(UserSetting).where(
+            UserSetting.organization_id == organization_id,
+            UserSetting.user_id.in_(user_ids),
+        )
+        rows = (await self._session.scalars(stmt)).all()
+        answer: dict[UUID, dict[str, Any]] = {}
+        for row in rows:
+            answer.setdefault(row.user_id, {})[row.key] = row.value
+        return answer
 
     async def write(
         self, organization_id: UUID, user_id: UUID, values: dict[str, Any]

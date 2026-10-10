@@ -59,8 +59,13 @@ export interface Person {
   last_name: string | null
   avatar_url: string | null
   email: string | null
-  status: string
+status: string
   last_login_at: string | null
+  /** When they were last here, and whether this viewer may read it (2.9). The
+   *  pair travels together because "never seen" and "not yours to see" are
+   *  different answers and one nullable field cannot hold both. */
+  last_seen: string | null
+  last_seen_visible: boolean
   created_at: string
   birthday: string | null
   contacts_visible: boolean
@@ -88,7 +93,7 @@ export interface PeopleQuery {
   position_id?: string
   status?: 'active' | 'invited' | 'disabled'
   scope?: 'members' | 'outside' | 'all'
-  sort?: 'name' | 'email' | 'role' | 'department' | 'position' | 'status' | 'created_at' | 'last_login_at'
+  sort?: 'name' | 'email' | 'role' | 'department' | 'position' | 'status' | 'created_at' | 'last_login_at' | 'last_seen'
   direction?: 'asc' | 'desc'
   limit?: number
   offset?: number
@@ -107,8 +112,10 @@ export interface MemberProfile {
   username: string
   first_name: string | null
   last_name: string | null
-  avatar_url: string | null
+avatar_url: string | null
   last_login_at: string | null
+  last_seen: string | null
+  last_seen_visible: boolean
   department_id: string | null
   department_name: string | null
 position_id: string | null

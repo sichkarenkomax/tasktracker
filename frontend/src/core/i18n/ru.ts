@@ -407,7 +407,8 @@ export const ru: Record<TranslationKey, string> = {
   'people.column.manager': 'Руководитель',
   'people.column.role': 'Роль',
   'people.column.status': 'Состояние',
-  'people.column.lastLogin': 'Был в сети',
+  'people.column.lastLogin': 'Последний вход',
+  'people.column.lastSeen': 'Был в сети',
   'people.status.active': 'Активен',
   'people.status.invited': 'Приглашён',
   'people.status.disabled': 'Заблокирован',
@@ -462,6 +463,14 @@ export const ru: Record<TranslationKey, string> = {
   'profile.noContacts': 'Здесь пока пусто.',
   'profile.contactsHidden': 'Этот человек показывает свои контакты только администраторам.',
   'profile.lastSeen': 'Последний вход',
+  'profile.presence': 'Сейчас на месте',
+  'profile.presenceOnline': 'сейчас на месте',
+  'profile.presenceHidden': 'Этот человек не показывает, когда был на месте.',
+  'profile.presenceLastSeenTitle': 'Когда человек был здесь',
+  'profile.presenceVisibility': 'Кто видит, что вы были здесь',
+  'profile.presenceVisibilityHint':
+    'Коллеги видят точку, пока вы работаете, а потом — сколько времени назад вы были. Это следует за вашей активностью, а не за статусом.',
+  'profile.presenceLocked': 'В этом портале решает портал, поэтому выбора здесь нет.',
   'profile.messageTitle': 'Написать сообщение',
   'profile.messageLater': 'Переписка появится вместе с чатом, на этапе 8.',
   'profile.editOwn': 'Изменить свой профиль',
@@ -478,6 +487,10 @@ export const ru: Record<TranslationKey, string> = {
     'Кто может читать почту, телефоны и дату рождения участника. Имя, отдел, должность и аватар видны организации всегда — по ним и находят, к кому идти.',
   'settings.contactsVisibility': 'Для тех, кто не выбрал сам',
   'settings.contactsSelfService': 'Позволять участникам выбирать самим',
+  'settings.presence': 'Присутствие',
+  'settings.presenceHint':
+    'Кто видит, когда участник был здесь. Обновляется по его собственной активности — без heartbeat, ничего не надо устанавливать и держать включённым.',
+  'settings.presenceSelfService': 'Позволять участникам выбирать самим',
 
   // --- errors -----------------------------------------------------------
   'error.generic': 'Что-то пошло не так.',

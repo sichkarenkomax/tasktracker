@@ -119,6 +119,12 @@ class PersonRead(BaseModel):
     email: str | None = None
     status: str
     last_login_at: datetime | None = None
+    #: "Last seen" rather than "last signed in" (stage 2.9), and whether the
+    #: viewer may read it. Kept apart for the same reason as ``email``: a person
+    #: who has never been seen and a person whose answer hides it are different
+    #: rows, and a blank cell cannot say which one it is.
+    last_seen: datetime | None = None
+    last_seen_visible: bool = True
     created_at: datetime
     birthday: str | None = None
     contacts_visible: bool = True

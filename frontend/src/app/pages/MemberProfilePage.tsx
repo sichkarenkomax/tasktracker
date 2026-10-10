@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 
 import { useAuth } from '../../core/auth/AuthContext'
-import { formatDate, formatDateTime } from '../../core/format'
+import { formatDate } from '../../core/format'
 import { useAsync, useMutation } from '../../core/hooks/useAsync'
 import { useI18n } from '../../core/i18n'
 import type { TranslationKey } from '../../core/i18n'
@@ -19,6 +19,7 @@ import { formatPhone, isValidPhone, phoneDigits, toE164 } from '../../core/users
 import type { PhoneKind } from '../../core/users/phoneMask'
 import { usersApi } from '../../core/users/api'
 import type { MemberProfile } from '../../core/users/api'
+import { PresenceLabel } from '../../core/users/presence'
 
 /** "No department", "no position" - a real answer, not an empty one. */
 const ANY = 'any'
@@ -125,10 +126,20 @@ export function MemberProfilePage() {
               <dd>{t(`role.${person.role}` as 'role.member')}</dd>
             </>
           ) : null}
-          {person.last_login_at ? (
+{/* Presence, not "last signed in" (2.9): the first answers "is this
+              person at their desk", the second only "did they once type a
+              password today". And when their answer hides it, the row is not
+              drawn at all - a dash here would say "we know and you may not",
+              which is more than the card is entitled to say. */}
+          {person.last_seen_visible ? (
             <>
-              <dt>{t('profile.lastSeen')}</dt>
-              <dd>{formatDateTime(person.last_login_at)}</dd>
+              <dt>{t('profile.presence')}</dt>
+              <dd>
+                <PresenceLabel
+                  lastSeen={person.last_seen}
+                  visible={person.last_seen_visible}
+                />
+              </dd>
             </>
           ) : null}
         </dl>

@@ -254,9 +254,14 @@ function ContactsPanel() {
     phones.reload()
   })
 
-  const saveVisibility = useMutation<string, void>(async (value) => {
+const saveVisibility = useMutation<string, void>(async (value) => {
     if (!organizationId) return
     await personalSettingsApi.update(organizationId, { contacts_visibility: value })
+  })
+
+  const savePresence = useMutation<string, void>(async (value) => {
+    if (!organizationId) return
+    await personalSettingsApi.update(organizationId, { last_seen_visibility: value })
   })
 
   if (!user) return null
@@ -264,6 +269,12 @@ function ContactsPanel() {
   const selfService = portal.data?.values?.contacts_self_service !== false
   const storedVisibility = personal.data?.stored?.contacts_visibility
   const visibility = typeof storedVisibility === 'string' ? storedVisibility : 'everyone'
+  // The portal may answer this one itself, in which case the switch is gone and
+  // the sentence underneath says so - the same contract as the contacts above.
+  const presenceSelfService = portal.data?.values?.last_seen_self_service !== false
+  const storedPresence = personal.data?.stored?.last_seen_visibility
+  const presenceVisibility =
+    typeof storedPresence === 'string' ? storedPresence : 'everyone'
   const rows = phones.data ?? []
 
   return (
@@ -351,7 +362,7 @@ function ContactsPanel() {
         </button>
       </form>
 
-      <h3>{t('profile.visibility')}</h3>
+<h3>{t('profile.visibility')}</h3>
       {selfService ? (
         <label className="field">
           <span className="visually-hidden">{t('profile.visibility')}</span>
@@ -375,6 +386,37 @@ function ContactsPanel() {
         // No switch: the portal has taken this decision away, and saying so is
         // better than a control whose every save would be refused.
         <p className="muted">{t('profile.visibilityLocked')}</p>
+      )}
+
+      {/* Presence (2.9). A second switch, not a second mode of the first one:
+          a person may well want their phone numbers to the team and their
+          working hours to nobody - the two are unrelated, and merging them
+          would force one answer for two questions. */}
+      <h3>{t('profile.presenceVisibility')}</h3>
+      {presenceSelfService ? (
+        <>
+          <p className="muted">{t('profile.presenceVisibilityHint')}</p>
+          <label className="field">
+            <span className="visually-hidden">{t('profile.presenceVisibility')}</span>
+            <Listbox<string>
+              value={presenceVisibility}
+              options={[
+                { value: 'everyone', label: t('profile.visibilityEveryone') },
+                { value: 'admins', label: t('profile.visibilityAdmins') },
+              ]}
+              onChange={(next) => {
+                if (next === null) return
+                setError(null)
+                void savePresence.run(next).then((done) => {
+                  if (done !== null) personal.reload()
+                  else setError(savePresence.error)
+                })
+              }}
+            />
+          </label>
+        </>
+      ) : (
+        <p className="muted">{t('profile.presenceLocked')}</p>
       )}
     </section>
   )

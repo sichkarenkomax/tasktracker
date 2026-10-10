@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 
 import { useAuth } from '../auth/AuthContext'
@@ -17,6 +17,7 @@ import { Listbox } from '../ui/Listbox'
 import { Avatar } from './Avatar'
 import { usersApi } from './api'
 import type { Person, PersonPage, PeopleQuery } from './api'
+import { PresenceDot, PresenceLabel } from './presence'
 import type { TranslationKey } from '../i18n'
 
 /**
@@ -42,8 +43,9 @@ const COLUMN_IDS = [
   'department',
   'position',
   'role',
-  'status',
+'status',
   'last_login_at',
+  'last_seen',
 ] as const
 
 type ColumnId = (typeof COLUMN_IDS)[number]
@@ -87,7 +89,11 @@ function People() {
         position: t('people.column.position'),
         role: t('people.column.role'),
         status: t('people.column.status'),
-        last_login_at: t('people.column.lastLogin'),
+last_login_at: t('people.column.lastLogin'),
+        // Presence is its own column rather than a rename of the login one (2.9):
+        // they disagree, and the roster is read to answer "who is around", which
+        // only the newer timestamp answers.
+        last_seen: t('people.column.lastSeen'),
       },
       required: REQUIRED_COLUMNS,
       defaults: DEFAULT_COLUMNS,
@@ -98,6 +104,9 @@ function People() {
 
   const [columns, setColumns] = useState<ColumnId[]>(() => readColumns(set))
   const [configuring, setConfiguring] = useState(false)
+  // The chooser floats above the table, anchored to this button, and hands the
+  // focus back to it when it closes.
+  const columnsButton = useRef<HTMLButtonElement>(null)
   const [term, setTerm] = useState('')
   const [search, setSearch] = useState('')
   const [scope, setScope] = useState<Scope>('members')
@@ -228,7 +237,14 @@ function People() {
           {t('filters.title')}
         </button>
 
-        <button type="button" className="button" onClick={() => setConfiguring((open) => !open)}>
+<button
+          type="button"
+          className="button"
+          ref={columnsButton}
+          aria-expanded={configuring}
+          aria-haspopup="dialog"
+          onClick={() => setConfiguring((open) => !open)}
+        >
           <Icon name="columns" size={15} />
           {t('columns.configure')}
         </button>
@@ -311,9 +327,15 @@ function People() {
         </div>
       ) : null}
 
-      {configuring ? (
-        <ColumnSettingsPanel set={set} columns={columns} onChange={applyColumns} />
-      ) : null}
+{configuring ? (
+          <ColumnSettingsPanel
+            set={set}
+            columns={columns}
+            onChange={applyColumns}
+            anchorRef={columnsButton}
+            onClose={() => setConfiguring(false)}
+          />
+        ) : null}
 
       {page.error ? (
         <p className="notice notice--error" role="alert">
@@ -407,10 +429,19 @@ function PersonRow({ person, columns }: { person: Person; columns: ColumnId[] })
   /** One cell per column, so hiding a column hides its cell too. */
   function cell(column: ColumnId): React.ReactNode {
     switch (column) {
-      case 'name':
+case 'name':
         return (
           <Link to={`/users/${person.id}`} className="people__name">
-            <Avatar src={person.avatar_url} name={name} size="sm" />
+            {/* The dot sits on the picture rather than beside the name: the name
+                is what the eye follows down the column, and a mark attached to
+                it would read as part of the name (2.9). */}
+            <span className="people__avatar">
+              <Avatar src={person.avatar_url} name={name} size="sm" />
+              <PresenceDot
+                lastSeen={person.last_seen}
+                visible={person.last_seen_visible}
+              />
+            </span>
             <span>
               <strong>{name}</strong>
               {person.first_name ? <span className="muted"> @{person.username}</span> : null}
@@ -446,11 +477,21 @@ function PersonRow({ person, columns }: { person: Person; columns: ColumnId[] })
             {t(`people.status.${person.status}` as TranslationKey)}
           </span>
         )
-      case 'last_login_at':
+case 'last_login_at':
         return person.last_login_at ? (
-          formatDateTime(person.last_login_at)
+          // Withheld with the presence the person hid (2.9): the sign-in time is
+          // the same fact, written a week earlier. A dash would say "never".
+          person.last_seen_visible ? (
+            formatDateTime(person.last_login_at)
+          ) : (
+            <span className="muted">{t('people.hidden')}</span>
+          )
         ) : (
           <span className="muted">{t('people.never')}</span>
+        )
+      case 'last_seen':
+        return (
+          <PresenceLabel lastSeen={person.last_seen} visible={person.last_seen_visible} />
         )
     }
   }

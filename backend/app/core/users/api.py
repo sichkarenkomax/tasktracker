@@ -41,7 +41,7 @@ from app.core.permissions.service import AuthorizationService
 from app.core.users.models import PhoneKind, UserStatus
 from app.core.users.repository import UserPhoneRepository, UserRepository
 from app.core.users.service import UserService
-from app.core.users.visibility import ContactsVisibility
+from app.core.users.visibility import contacts_visibility, presence_visibility
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -82,6 +82,10 @@ class PhoneWrite(BaseModel):
 class UserProfile(UserSummary):
     is_superuser: bool
     last_login_at: datetime | None = None
+    #: When *this* person was last here (stage 2.9). No visibility question on
+    #: one's own profile: the only person it would be hidden from is the one who
+    #: asked.
+    last_seen: datetime | None = None
     #: Contacts, present only when the viewer may read them (stage 2.6). A null
     #: date means "there is none to show"; a profile whose contacts are withheld
     #: leaves ``contacts_visible`` false and says so, rather than sending empty
@@ -108,6 +112,13 @@ class ProfileRead(BaseModel):
     last_name: str | None = None
     avatar_url: str | None = None
     last_login_at: datetime | None = None
+    #: When they were last here, and whether this viewer is allowed to know it
+    #: (stage 2.9). Two fields rather than one, because a missing timestamp and a
+    #: withheld one are different facts: the first says "never", the second says
+    #: "not yours to read", and a card that renders them the same way is lying in
+    #: one of the two cases. `last_login_at` is withheld with it - see the route.
+    last_seen: datetime | None = None
+    last_seen_visible: bool = True
     department_id: UUID | None = None
     department_name: str | None = None
     position_id: UUID | None = None
@@ -391,7 +402,7 @@ async def read_profile(
     Two audiences in one response, and the difference is which fields are
     filled rather than a second route: the name, department, position and avatar
     are always here, while the contacts are decided per request by
-    ``ContactsVisibility``. A profile that answered 403 to somebody who may see
+    ``users.visibility``. A profile that answered 403 to somebody who may see
     the name but not the phone would make the roster full of links that fail.
     """
     role = await AuthorizationService(session).require_permission(
@@ -420,7 +431,7 @@ async def read_profile(
         )
         position_title = position.title if position is not None else None
 
-    visible = await ContactsVisibility(session).viewer_may_see(
+    visible = await contacts_visibility(session).viewer_may_see(
         viewer=user, person_id=user_id, organization_id=organization_id, viewer_role=role
     )
     phones: list[PhoneRead] = []
@@ -430,6 +441,14 @@ async def read_profile(
             for phone in await UserPhoneRepository(session).list_for(user_id)
         ]
 
+    # Presence is its own question with its own answer (stage 2.9), and it takes
+    # `last_login_at` with it: leaving the sign-in time visible to everybody while
+    # hiding "when were you last here" would publish the same fact through the
+    # back door, one column older.
+    seen_by_viewer = await presence_visibility(session).viewer_may_see(
+        viewer=user, person_id=user_id, organization_id=organization_id, viewer_role=role
+    )
+
     return ProfileRead(
         id=target.id,
         email=target.email if visible else None,
@@ -437,7 +456,9 @@ async def read_profile(
         first_name=target.first_name,
         last_name=target.last_name,
         avatar_url=target.avatar_url,
-        last_login_at=target.last_login_at,
+        last_login_at=target.last_login_at if seen_by_viewer else None,
+        last_seen=target.last_seen if seen_by_viewer else None,
+        last_seen_visible=seen_by_viewer,
         department_id=membership.department_id if membership is not None else None,
         department_name=department_name,
         position_id=membership.position_id if membership is not None else None,
