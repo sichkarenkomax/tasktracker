@@ -7,6 +7,7 @@ import { useI18n, LOCALES } from '../../core/i18n'
 import type { Locale } from '../../core/i18n'
 import { useOrganization } from '../../core/organizations/OrganizationContext'
 import { personalSettingsApi } from '../../core/settings/api'
+import { PEOPLE_INFO_DEFAULT, setPeopleInfo } from '../../core/settings/peopleInfo'
 import { getTheme, setTheme } from '../../core/theme/theme'
 import type { Theme } from '../../core/theme/theme'
 import { Listbox } from '../../core/ui/Listbox'
@@ -49,6 +50,11 @@ export function PreferencesPage() {
     await personalSettingsApi.update(organizationId, body)
   })
 
+  const savePeopleInfo = useMutation<{ people_info: string | null }, void>(async (body) => {
+    if (!organizationId) return
+    await personalSettingsApi.update(organizationId, body)
+  })
+
   const formats: Array<{ value: string; label: string }> = [
     // First, and deliberately: choosing a format once must not be a life
     // sentence. This row writes `null`, which removes the personal override and
@@ -66,6 +72,12 @@ export function PreferencesPage() {
   // format's clothes. State holds only the change just made.
   const [dateFormatDraft, setDateFormatDraft] = useState<string | null>(null)
   const dateFormat = dateFormatDraft ?? storedFormat ?? FOLLOW_PORTAL
+
+  // Same arrangement for the people preference (stage 2.5), except that it has no
+  // portal-side value to fall back to: the control shows the stored key, and an
+  // untouched one reads as the default.
+  const storedPeopleInfo = personal.data?.stored?.people_info as string | undefined
+  const [peopleInfoDraft, setPeopleInfoDraft] = useState<string | null>(null)
 
   return (
     <section className="narrow">
@@ -135,6 +147,39 @@ export function PreferencesPage() {
         {saveDateFormat.error ? (
           <p className="notice notice--error" role="alert">
             {saveDateFormat.error}
+          </p>
+        ) : null}
+      </section>
+
+      <section className="panel">
+        <h2>{t('settings.peopleInfo')}</h2>
+        <p className="muted">{t('settings.peopleInfoHint')}</p>
+        <label className="field">
+          <span className="visually-hidden">{t('settings.peopleInfo')}</span>
+          <Listbox<string>
+            value={peopleInfoDraft ?? storedPeopleInfo ?? PEOPLE_INFO_DEFAULT}
+            options={[
+              { value: 'full', label: t('settings.peopleInfoFull') },
+              { value: 'names', label: t('settings.peopleInfoNames') },
+            ]}
+            onChange={(next) => {
+              if (next === null) return
+              setPeopleInfoDraft(next)
+              // Applied at once, and for the same reason as the format above: the
+              // pickers are open in other tabs and behind this screen, and a
+              // switch that only takes effect after a save would look broken.
+              setPeopleInfo(next)
+              void savePeopleInfo.run({ people_info: next }).then((done) => {
+                if (done === null) return
+                setPeopleInfoDraft(null)
+                personal.reload()
+              })
+            }}
+          />
+        </label>
+        {savePeopleInfo.error ? (
+          <p className="notice notice--error" role="alert">
+            {savePeopleInfo.error}
           </p>
         ) : null}
       </section>

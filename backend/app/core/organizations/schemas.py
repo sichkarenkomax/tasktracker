@@ -62,6 +62,10 @@ class MembershipRead(BaseModel):
     role: OrganizationRole
     joined_at: datetime | None
     user: UserSummaryRead | None = None
+    #: The org-structure position this member holds, as a title (stage 2.5). None
+    #: is a normal answer - most members hold none - and is why the picker shows
+    #: the position only when there is one.
+    position_title: str | None = None
 
 
 class UserSummaryRead(BaseModel):

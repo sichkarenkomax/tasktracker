@@ -4,7 +4,7 @@ import { BrowserRouter, Outlet, Route, Routes } from 'react-router-dom'
 
 import { AuthProvider } from '../core/auth/AuthContext'
 import { RequireAuth } from '../core/auth/RequireAuth'
-import { DateFormatSync } from '../core/format/DateFormatSync'
+import { SettingsSync } from '../core/format/SettingsSync'
 import { I18nProvider } from '../core/i18n'
 import { OrganizationProvider, useOrganization } from '../core/organizations/OrganizationContext'
 import { AppShell } from '../core/layout/AppShell'
@@ -48,7 +48,7 @@ export function App() {
       <BrowserRouter>
         <AuthProvider>
           <OrganizationProvider>
-            <DateFormatSync />
+            <SettingsSync />
             <RailBadges>
               <AppShell>
                 <Routes>

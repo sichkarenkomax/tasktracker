@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react'
-
 import { DateField } from '../../../core/ui/DateField'
+import type { Member } from '../../../core/organizations/api'
 import { Listbox } from '../../../core/ui/Listbox'
+import { PersonSelect } from '../../../core/users/PersonSelect'
+import { useFieldCommit } from './useFieldCommit'
 
 /**
  * A labelled select for one task field.
@@ -40,35 +41,7 @@ export function TaskFieldSelect<T extends string>({
   disabled,
   onCommit,
 }: TaskFieldSelectProps<T>) {
-  const [draft, setDraft] = useState(value ?? '')
-  const [error, setError] = useState<string | null>(null)
-  const [pending, setPending] = useState(false)
-
-  // Re-sync when the server value changes underneath us - for example after a
-  // reload picked up somebody else's edit. Without this the select would keep
-  // showing the stale choice the user abandoned.
-  useEffect(() => {
-    setDraft(value ?? '')
-  }, [value])
-
-  async function commit(next: string) {
-    setDraft(next)
-    const parsed = (next || null) as T | null
-    if (parsed === value) return
-
-    setPending(true)
-    setError(null)
-    try {
-      await onCommit(parsed)
-    } catch (cause: unknown) {
-      // Put the old value back: leaving the control showing something the server
-      // rejected is how a UI starts lying about the state of the data.
-      setDraft(value ?? '')
-      setError(cause instanceof Error ? cause.message : 'Could not save')
-    } finally {
-      setPending(false)
-    }
-  }
+  const { draft, error, pending, commit } = useFieldCommit(value, onCommit)
 
   return (
     <label className="field">
@@ -80,6 +53,52 @@ export function TaskFieldSelect<T extends string>({
         clearable={emptyLabel !== undefined}
         disabled={disabled || pending}
         invalid={error !== null}
+        onChange={(next) => void commit(next ?? '')}
+      />
+      {error ? (
+        <span className="field__error" role="alert">
+          {error}
+        </span>
+      ) : null}
+    </label>
+  )
+}
+
+/**
+ * The responsible person, as a labelled field on a task.
+ *
+ * `TaskFieldSelect` with people in it rather than a fourth copy of the same
+ * editor: the roster, the avatar, the position under the name and the personal
+ * "names only" preference all live in `PersonSelect`, and a field that showed a
+ * different list from the one on the create form would be a bug report.
+ */
+export function PersonTaskFieldSelect({
+  label,
+  members,
+  value,
+  emptyLabel,
+  disabled,
+  onCommit,
+}: {
+  label: string
+  members: ReadonlyArray<Member>
+  value: string | null
+  /** Text for the blank option, which also makes the field clearable. */
+  emptyLabel?: string
+  disabled?: boolean
+  onCommit: (next: string | null) => Promise<void>
+}) {
+  const { draft, error, pending, commit } = useFieldCommit(value, onCommit)
+
+  return (
+    <label className="field">
+      <span>{label}</span>
+      <PersonSelect
+        members={members}
+        value={draft === '' ? null : draft}
+        placeholder={emptyLabel}
+        clearable={emptyLabel !== undefined}
+        disabled={disabled || pending}
         onChange={(next) => void commit(next ?? '')}
       />
       {error ? (
@@ -111,31 +130,10 @@ export function TaskDateField({
   disabled?: boolean
   onCommit: (next: string | null) => Promise<void>
 }) {
-  const [draft, setDraft] = useState(value ?? '')
-  const [error, setError] = useState<string | null>(null)
-  const [pending, setPending] = useState(false)
-
-  useEffect(() => {
-    setDraft(value ?? '')
-  }, [value])
-
-  async function commit(next: string) {
-    setDraft(next)
+const { draft, error, pending, commit } = useFieldCommit(value, async (next) => {
     // An empty date input means "no deadline", which is null and not "".
-    const parsed = next === '' ? null : next
-    if (parsed === value) return
-
-    setPending(true)
-    setError(null)
-    try {
-      await onCommit(parsed)
-    } catch (cause: unknown) {
-      setDraft(value ?? '')
-      setError(cause instanceof Error ? cause.message : 'Could not save')
-    } finally {
-      setPending(false)
-    }
-  }
+    await onCommit(next)
+  })
 
   return (
     <label className="field">

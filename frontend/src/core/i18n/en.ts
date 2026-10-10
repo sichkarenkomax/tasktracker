@@ -374,6 +374,13 @@ export const en = {
     'How dates are written in this portal. Anyone can pick a different one for themselves in their personal settings.',
   'settings.dateFormatOverridden':
     'You have a personal date format of your own, and it outranks the portal\'s - so changing it here will not change anything for you. Undo that in your personal settings.',
+  'settings.peopleInfo': 'People in lists',
+  'settings.peopleInfoFull': 'Extended: name and position',
+  'settings.peopleInfoNames': 'Names only',
+  'settings.peopleInfoHint':
+    'How much a person is described by in the lists where you choose somebody. Extended shows the org position under the name - which is what tells two similar names apart. Your choice is yours alone; nobody else sees it change.',
+  'listbox.searchPlaceholder': 'Search',
+  'listbox.nothingFound': 'Nobody found',
   'dateFormat.YYYY-MM-DD': '2026-10-08 (ISO)',
   'dateFormat.DD.MM.YYYY': '08.10.2026',
   'dateFormat.MM/DD/YYYY': '10/08/2026',

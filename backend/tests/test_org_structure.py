@@ -230,6 +230,47 @@ class TestDepartments:
 
 
 class TestPositions:
+    async def test_a_member_carries_their_position_title(
+        self, client: AsyncClient, owner: dict[str, Any]
+    ) -> None:
+        """The picker writes the title under the name, so the title has to arrive
+        with the roster (stage 2.5) rather than be resolved by the client."""
+        position = await _position(client, owner, "Backend developer")
+        owner_id = owner["user"]["id"]
+        placed = await _place(client, owner, owner_id, position_id=position["id"])
+        assert placed.status_code == 200, placed.text
+
+        members = await client.get(
+            f"/api/v1/organizations/{owner['organization']['id']}/members",
+            headers=auth_headers(owner["token"]),
+        )
+        assert members.status_code == 200
+        titles = {row["user_id"]: row["position_title"] for row in members.json()}
+        assert titles[owner_id] == "Backend developer"
+
+        structure = await client.get(
+            f"/api/v1/organizations/{owner['organization']['id']}/structure",
+            headers=auth_headers(owner["token"]),
+        )
+        assert structure.status_code == 200
+        assert {row["user_id"]: row["position_title"] for row in structure.json()["members"]}[
+            owner_id
+        ] == "Backend developer"
+
+    async def test_a_member_without_a_position_carries_none(
+        self, client: AsyncClient, owner: dict[str, Any]
+    ) -> None:
+        """The common case, and the reason the join is an outer one: an inner join
+        would have dropped these people out of the roster entirely."""
+        members = await client.get(
+            f"/api/v1/organizations/{owner['organization']['id']}/members",
+            headers=auth_headers(owner["token"]),
+        )
+
+        titles = {row["user_id"]: row["position_title"] for row in members.json()}
+        assert titles[owner["user"]["id"]] is None
+        assert owner["user"]["id"] in titles
+
     async def test_create(self, client: AsyncClient, owner: dict[str, Any]) -> None:
         department = await _department(client, owner, "Engineering")
 

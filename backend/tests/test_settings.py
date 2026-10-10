@@ -7,7 +7,7 @@ from typing import Any
 from httpx import AsyncClient
 
 from app.core.settings.service import PERSONAL_SETTING_DEFINITIONS, SETTING_DEFINITIONS
-from tests.conftest import auth_headers
+from tests.conftest import auth_headers, register_user
 
 
 def settings_url(organization_id: str) -> str:
@@ -287,4 +287,68 @@ class TestPersonalSettings:
         assert (
             reread["values"]["date_format"]
             == PERSONAL_SETTING_DEFINITIONS["date_format"]["default"]
+        )
+
+    async def test_how_much_of_a_person_is_shown_is_personal(
+        self, client: AsyncClient, owner: dict[str, Any]
+    ) -> None:
+        """The pickers' amount of detail (stage 2.5), and nobody else's business.
+
+        It is a personal key with no portal-side twin: one person reads every
+        roster with positions under the names, a colleague in the same portal
+        reads names only, and neither of them is mistaken about why.
+        """
+        organization_id = owner["organization"]["id"]
+
+        defaults = (await read_personal(client, owner["token"], organization_id)).json()
+        assert defaults["values"]["people_info"] == "full"
+        assert defaults["stored"] == {}
+
+        await write_personal(client, owner["token"], organization_id, {"people_info": "names"})
+
+        chosen = (await read_personal(client, owner["token"], organization_id)).json()
+        assert chosen["stored"] == {"people_info": "names"}
+        assert chosen["values"]["people_info"] == "names"
+
+        # The colleague's answer is unchanged, which is the whole point of it
+        # being personal rather than an organization setting.
+        colleague = await register_user(client, prefix="colleague")
+        await client.post(
+            f"/api/v1/organizations/{organization_id}/members",
+            json={"email": colleague["user"]["email"], "role": "member"},
+            headers=auth_headers(owner["token"]),
+        )
+
+        other = await write_personal(
+            client, colleague["access_token"], organization_id, {"people_info": "full"}
+        )
+        assert other.status_code == 200
+        assert (await read_personal(client, colleague["access_token"], organization_id)).json()[
+            "stored"
+        ] == {"people_info": "full"}
+        assert (await read_personal(client, owner["token"], organization_id)).json()["stored"] == {
+            "people_info": "names"
+        }
+
+    async def test_an_unknown_amount_of_detail_is_refused(
+        self, client: AsyncClient, owner: dict[str, Any]
+    ) -> None:
+        """Only the two values the frontend reads may be stored.
+
+        A third spelling would be accepted by a free-form key and then read as
+        "not full", quietly showing names only to the person who asked for
+        something else.
+        """
+        response = await write_personal(
+            client, owner["token"], owner["organization"]["id"], {"people_info": "everything"}
+        )
+
+        assert response.status_code == 422
+        assert "everything" in response.json()["error"]["message"]
+
+        reread = (await read_personal(client, owner["token"], owner["organization"]["id"])).json()
+        assert reread["stored"] == {}
+        assert (
+            reread["values"]["people_info"]
+            == PERSONAL_SETTING_DEFINITIONS["people_info"]["default"]
         )

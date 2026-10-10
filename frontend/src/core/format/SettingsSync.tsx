@@ -5,20 +5,26 @@ import { useAsync } from '../hooks/useAsync'
 import { organizationsApi } from '../organizations/api'
 import { useOrganization } from '../organizations/OrganizationContext'
 import { personalSettingsApi } from '../settings/api'
+import { setPeopleInfo } from '../settings/peopleInfo'
 
 /**
- * Keeps the date format in step with the settings.
+ * Keeps the personal display settings in step with the server.
  *
  * Two sources, and the order matters: a person's own format outranks the portal's,
  * which is the precedence the storage quotas use too. Neither is read from the
- * browser, because this setting does not have to be in hand before the first
+ * browser, because these settings do not have to be in hand before the first
  * paint - the language and the theme are (see `I18nProvider` and `theme.ts`), and
- * a date is text that can arrive a moment later without a flash of the wrong year.
+ * a date or a person is something that can arrive a moment later without a flash
+ * of the wrong thing.
  *
- * Renders nothing: it is a synchroniser, and the value it sets is what
- * `formatDate` reads wherever a date is written.
+ * One component for both keys on purpose: the answer arrives in one request, and
+ * two synchronisers would either read the same personal settings twice or drift
+ * apart about when they had read them.
+ *
+ * Renders nothing: it is a synchroniser, and the values it sets are what
+ * `formatDate` and `getPeopleInfo` read wherever they are used.
  */
-export function DateFormatSync() {
+export function SettingsSync() {
   const { current } = useOrganization()
   const organizationId = current?.id ?? null
 
@@ -41,6 +47,11 @@ export function DateFormatSync() {
     if (typeof own === 'string') setDateFormat(own)
     const portal = settings.data?.values?.date_format
     if (typeof portal === 'string' && typeof own !== 'string') setDateFormat(portal)
+
+    // The other personal key, and personal-only by decision (2.5): there is no
+    // portal-side variant to fall back to. Absent means the reader never chose,
+    // and `setPeopleInfo` puts the default back.
+    setPeopleInfo(personal.data?.stored?.people_info)
   }, [settings.data, personal.data])
 
   return null

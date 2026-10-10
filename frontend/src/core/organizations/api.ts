@@ -35,6 +35,10 @@ export interface Member extends Membership {
   /** The API sends it inside the nested account (stage 2.3); it used to be dropped
    *  here, so every list drew a letter while the header showed a photo. */
   avatar_url: string | null
+  /** The org-structure position this member holds, as a title (stage 2.5). The
+   *  pickers write it under the name, so it travels with the roster instead of
+   *  being resolved from ids in every list that needs it. */
+  position_title: string | null
 }
 
 interface MembershipWithUser extends Membership {
@@ -46,6 +50,7 @@ interface MembershipWithUser extends Membership {
     last_name: string | null
     avatar_url: string | null
   } | null
+  position_title?: string | null
 }
 
 /**
@@ -66,6 +71,7 @@ export function flattenMember(row: MembershipWithUser): Member {
     first_name: row.user?.first_name ?? null,
     last_name: row.user?.last_name ?? null,
     avatar_url: row.user?.avatar_url ?? null,
+    position_title: row.position_title ?? null,
   }
 }
 

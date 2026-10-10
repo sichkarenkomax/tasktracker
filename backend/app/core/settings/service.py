@@ -64,6 +64,17 @@ PERSONAL_SETTING_DEFINITIONS: dict[str, dict[str, Any]] = {
         "default": "YYYY-MM-DD",
         "values": ["YYYY-MM-DD", "DD.MM.YYYY", "MM/DD/YYYY", "DD.MM.YY", "locale"],
     },
+    # How much of a person the pickers draw (stage 2.5). Personal rather than
+    # portal-wide: the position under a name is what tells two rows apart for a
+    # reader who does not know the roster, and it is clutter for the colleague
+    # who picks the same three people all day. `full` is the default because the
+    # person choosing rarely knows everyone's titles, and a name with nothing
+    # under it is the state that produces the wrong choice.
+    "people_info": {
+        "type": "string",
+        "default": "full",
+        "values": ["full", "names"],
+    },
 }
 
 

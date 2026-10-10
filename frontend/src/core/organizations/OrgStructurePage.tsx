@@ -7,6 +7,7 @@ import { Icon } from '../layout/Icon'
 import { useCapabilities } from '../permissions/capabilities'
 import { Listbox } from '../ui/Listbox'
 import { Avatar } from '../users/Avatar'
+import { PersonSelect } from '../users/PersonSelect'
 import { flattenMember, organizationsApi } from './api'
 import type { Member, OrgPosition, OrgStructure, Placement } from './api'
 import { departmentSubtree, displayName, flattenDepartments } from './chartLayout'
@@ -822,13 +823,9 @@ function DepartmentInspector({
 
         <label className="field">
           <span>{t('org.head')}</span>
-          <Listbox<string>
+          <PersonSelect
+            members={members}
             value={department.head_id ?? null}
-            options={members.map((item) => ({
-              value: item.user_id,
-              label: displayName(item),
-              avatarUrl: item.avatar_url,
-            }))}
             placeholder={t('org.noManager')}
             clearable
             onChange={(next) =>
@@ -1001,13 +998,9 @@ function PersonInspector({
 
         <label className="field">
           <span>{t('org.manager')}</span>
-          <Listbox<string>
+          <PersonSelect
+            members={candidates}
             value={placement.manager_id ?? null}
-            options={candidates.map((item) => ({
-              value: item.user_id,
-              label: displayName(item),
-              avatarUrl: item.avatar_url,
-            }))}
             placeholder={t('org.noManager')}
             clearable
             disabled={!canEdit || place.pending}
@@ -1042,13 +1035,9 @@ function PersonInspector({
         )}
 
         {canEdit && deputyCandidates.length > 0 ? (
-          <Listbox<string>
+          <PersonSelect
+            members={deputyCandidates}
             value={null}
-            options={deputyCandidates.map((item) => ({
-              value: item.user_id,
-              label: displayName(item),
-              avatarUrl: item.avatar_url,
-            }))}
             placeholder={t('org.addDeputy')}
             aria-label={t('org.addDeputy')}
             onChange={(next) => {

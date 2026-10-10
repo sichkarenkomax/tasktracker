@@ -370,6 +370,13 @@ export const ru: Record<TranslationKey, string> = {
     'Как записываются даты в этом портале. Каждый может выбрать свой формат в персональных настройках.',
   'settings.dateFormatOverridden':
     'У вас выбран личный формат даты — он важнее формата портала, поэтому здесь его смена ничего не изменит. Откатить это можно в персональных настройках.',
+  'settings.peopleInfo': 'Люди в списках',
+  'settings.peopleInfoFull': 'Расширенно: имя и должность',
+  'settings.peopleInfoNames': 'Только имена',
+  'settings.peopleInfoHint':
+    'Сколько сведений о человеке показывать в списках выбора. «Расширенно» пишет должность под именем — именно она различает похожие имена. Выбор личный: у остальных он ничего не меняет.',
+  'listbox.searchPlaceholder': 'Поиск',
+  'listbox.nothingFound': 'Никого не найдено',
   'dateFormat.YYYY-MM-DD': '2026-10-08 (ISO)',
   'dateFormat.DD.MM.YYYY': '08.10.2026',
   'dateFormat.MM/DD/YYYY': '10/08/2026',

@@ -1558,6 +1558,68 @@ textarea {
   color: var(--accent);
 }
 
+/* Two-line row (stage 2.5): the name, and under it the position in a smaller,
+   quieter line. `nowrap` is dropped here and re-applied per line, so a long
+   position wraps within its own line instead of widening the menu. */
+.listbox__option--stacked {
+  align-items: flex-start;
+  white-space: normal;
+}
+
+.listbox__label {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.listbox__label > span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.listbox__secondary {
+  font-size: var(--font-size-xs);
+  line-height: 1.35;
+  color: var(--text-muted);
+}
+
+/* The search box sits inside the menu above the rows, and scrolls with them. */
+.listbox__search {
+  position: sticky;
+  top: calc(var(--space-1) * -1);
+  z-index: 1;
+  padding: var(--space-1);
+  margin: calc(var(--space-1) * -1) calc(var(--space-1) * -1) var(--space-1);
+  background: var(--surface-raised);
+  border-bottom: 1px solid var(--surface-02-border);
+}
+
+.listbox__search input {
+  width: 100%;
+  padding: var(--space-2);
+  font: inherit;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--surface-02-border);
+  border-radius: var(--radius);
+}
+
+.listbox__search input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* A search that found nobody says so as a row of its own, rather than leaving a
+   list that is suddenly empty and unexplained. */
+.listbox__empty {
+  padding: var(--space-3);
+  font-size: var(--font-size-sm);
+  color: var(--text-muted);
+  text-align: center;
+}
+
 /* The date field (stage 1.5 follow-up).
  *
  * The native `<input type="date">` draws its own popup and will not take a theme

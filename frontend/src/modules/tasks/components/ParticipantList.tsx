@@ -5,7 +5,7 @@ import { useI18n } from '../../../core/i18n'
 import { Icon } from '../../../core/layout/Icon'
 import type { Member } from '../../../core/organizations/api'
 import { Avatar } from '../../../core/users/Avatar'
-import { Listbox } from '../../../core/ui/Listbox'
+import { PersonSelect } from '../../../core/users/PersonSelect'
 import type { ParticipantRole, TaskParticipant } from '../types'
 
 /**
@@ -141,13 +141,9 @@ export function ParticipantList({
           >
             <label>
               <span className="visually-hidden">{title}</span>
-              <Listbox<string>
+              <PersonSelect
+                members={candidates}
                 value={who === '' ? null : who}
-                options={candidates.map((member) => ({
-                  value: member.user_id,
-                  label: member.first_name || member.username,
-                  avatarUrl: member.avatar_url,
-                }))}
                 placeholder={t('tasks.anyone')}
                 onChange={(next) => setWho(next ?? '')}
               />

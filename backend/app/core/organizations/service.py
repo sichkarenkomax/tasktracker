@@ -67,7 +67,7 @@ class OrgStructureSnapshot:
 
     departments: list[Department]
     positions: list[OrgPosition]
-    members: list[tuple[OrganizationMember, User]]
+    members: list[tuple[OrganizationMember, User, OrgPosition | None]]
     #: user id -> the ids of the people who cover for them.
     deputies: dict[UUID, list[UUID]] = dataclass_field(default_factory=dict)
 
@@ -620,7 +620,7 @@ class OrgStructureService:
 
     async def delete_position(self, position: OrgPosition, *, actor: User) -> None:
         organization_id = position.organization_id
-        for member, _ in await self._members.list_members(organization_id):
+        for member, _, _ in await self._members.list_members(organization_id):
             if member.position_id == position.id:
                 member.position_id = None
 

@@ -7,6 +7,7 @@ import type { Member } from '../../../core/organizations/api'
 import type { Project } from '../../../core/projects/api'
 import { DateField } from '../../../core/ui/DateField'
 import { Listbox } from '../../../core/ui/Listbox'
+import { PersonSelect } from '../../../core/users/PersonSelect'
 import { useTaskVocabulary } from './Badges'
 import type { TaskCreate, TaskPriority } from '../types'
 
@@ -155,13 +156,9 @@ async function submit(event: React.FormEvent) {
           {/* No clear row on purpose. A task always has somebody responsible
               for it, and the server answers 422 to a task without one; offering
               a blank choice here would only move that error further away. */}
-          <Listbox<string>
+          <PersonSelect
+            members={members}
             value={assigneeId === '' ? null : assigneeId}
-            options={members.map((member) => ({
-              value: member.user_id,
-              label: member.first_name || member.username,
-              avatarUrl: member.avatar_url,
-            }))}
             placeholder={t('tasks.noResponsible')}
             onChange={(next) => setAssigneeId(next ?? '')}
           />

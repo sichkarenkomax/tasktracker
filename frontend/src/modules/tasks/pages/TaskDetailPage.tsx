@@ -23,7 +23,7 @@ import {
 import { CommentThread } from '../components/CommentThread'
 import { ParticipantList } from '../components/ParticipantList'
 import { PlanningFields } from '../components/PlanningFields'
-import { TaskDateField, TaskFieldSelect } from '../components/TaskFieldSelect'
+import { PersonTaskFieldSelect, TaskDateField, TaskFieldSelect } from '../components/TaskFieldSelect'
 import { isDone } from '../types'
 import type {
   Comment,
@@ -252,14 +252,10 @@ function TaskDetail() {
               options={priorityOptions}
               onCommit={(next) => commitField({ priority: next })}
             />
-            <TaskFieldSelect<string>
+            <PersonTaskFieldSelect
               label={t('tasks.assignee')}
+              members={members}
               value={current.assignee_id}
-              options={members.map((member) => ({
-                value: member.user_id,
-                label: member.first_name || member.username,
-                avatarUrl: member.avatar_url,
-              }))}
               // No empty option at all: a task always has somebody responsible,
               // and a blank choice is a value the API refuses rather than stores.
               onCommit={(next) => commitField({ assignee_id: next })}
@@ -469,11 +465,6 @@ function ReadOnlyFields({
       <span className="readfields__value readfields__value--static">{content}</span>
     )
 
-  const memberOptions = members.map((member) => ({
-    value: member.user_id,
-    label: member.first_name || member.username,
-    avatarUrl: member.avatar_url,
-  }))
   const projectOptions = projects.map((project) => ({ value: project.id, label: project.name }))
 
   return (
@@ -520,10 +511,10 @@ function ReadOnlyFields({
         onStop={() => setEditing(null)}
       >
         {editing === 'assignee' ? (
-          <TaskFieldSelect<string>
+          <PersonTaskFieldSelect
             label={t('tasks.assignee')}
+            members={members}
             value={task.assignee_id}
-            options={memberOptions}
             onCommit={async (next) => {
               await onCommit({ assignee_id: next })
               setEditing(null)

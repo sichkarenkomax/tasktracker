@@ -26,6 +26,14 @@ export interface ListboxOption<T extends string> {
    * `<option>`; there the label alone carries the row, as before.
    */
   avatarUrl?: string | null
+  /**
+   * A second line under the label, small and quiet (stage 2.5).
+   *
+   * For people this is the org position, which is what tells two rows with
+   * similar names apart; for a status or a project there is nothing to add and
+   * the key is simply absent.
+   */
+  secondary?: string
 }
 
 interface ListboxBaseProps<T extends string> {
@@ -45,6 +53,23 @@ interface ListboxBaseProps<T extends string> {
   disabled?: boolean
   /** Marks the control as holding a value the form will reject (native `required`). */
   invalid?: boolean
+
+  /**
+   * A filter field inside the menu (stage 2.5).
+   *
+   * Typeahead on the trigger already walks the list by first letter, which is
+   * enough for three rows and useless for thirty: you cannot reach a name that
+   * does not begin with what you typed. The box matches the label, the second
+   * line and the hint, so a person can be found by their position too.
+   *
+   * With it the focus moves into the menu, because a field that cannot be typed
+   * into is not a field.
+   */
+  searchable?: boolean
+  /** Text for the row that says the search found nobody. */
+  nothingFoundLabel?: string
+  /** Placeholder of the search field. */
+  searchPlaceholder?: string
 
   /** Extra classes for the trigger - size and layout rules of the host page. */
   className?: string
@@ -73,6 +98,7 @@ interface Row<T extends string> {
   disabled: boolean
   clear: boolean
   avatarUrl?: string | null
+  secondary?: string
 }
 
 interface MenuPosition {
@@ -113,6 +139,7 @@ export function Listbox<T extends string>(props: ListboxProps<T>) {
 
   const triggerRef = useRef<HTMLButtonElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
+  const searchRef = useRef<HTMLInputElement>(null)
   // The menu's natural size, measured once per opening: the flip and the max
   // height are decided from it without a second measuring pass on every scroll.
   const sizeRef = useRef({ height: 0, width: 0 })
@@ -142,11 +169,26 @@ export function Listbox<T extends string>(props: ListboxProps<T>) {
       disabled: option.disabled === true,
       clear: false,
       avatarUrl: option.avatarUrl,
+      secondary: option.secondary,
     })
   }
   // "Empty" is a real state: with nothing selectable the trigger says so by
   // going inert rather than opening a list that cannot be chosen from.
   const openable = rows.some((row) => !row.disabled)
+
+  // The search narrows the rows it is given, and it never narrows the blank row
+  // away: "nobody" is not a person whose name failed to match.
+  const [query, setQuery] = useState('')
+  const searchable = props.searchable === true
+  const matches = (row: Row<T>) => {
+    if (!searchable || query.trim() === '') return true
+    const needle = query.trim().toLowerCase()
+    return [row.label, row.secondary ?? '', row.hint ?? ''].some((text) =>
+      text.toLowerCase().includes(needle),
+    )
+  }
+  const visibleRows = rows.filter(matches)
+  const nothingFound = searchable && query.trim() !== '' && visibleRows.length === 0
 
   const labelOf = new Map<T, string>(props.options.map((option) => [option.value, option.label]))
 
@@ -201,22 +243,26 @@ export function Listbox<T extends string>(props: ListboxProps<T>) {
 
   function openMenu() {
     if (!openable) return
-    const selectedRow = rows.findIndex(
+    setQuery('')
+    const selectedRow = visibleRows.findIndex(
       (row) => row.value !== null && selectedValues.includes(row.value),
     )
-    const firstEnabled = rows.findIndex((row) => !row.disabled)
+    const firstEnabled = visibleRows.findIndex((row) => !row.disabled)
     setActiveIndex(selectedRow >= 0 ? selectedRow : firstEnabled)
     setOpen(true)
     // Safari does not focus buttons on click, and the keyboard handling below
-    // lives on the button - focus it explicitly when the menu opens.
-    triggerRef.current?.focus()
+    // lives on the button - focus it explicitly when the menu opens. With a
+    // search box the focus belongs to the box instead, since that is where the
+    // reader is going to type.
+    if (searchable) searchRef.current?.focus()
+    else triggerRef.current?.focus()
   }
 
   function step(delta: number) {
     let index = activeIndex
-    for (let seen = 0; seen < rows.length; seen++) {
-      index = (index + delta + rows.length) % rows.length
-      const row = rows[index]
+    for (let seen = 0; seen < visibleRows.length; seen++) {
+      index = (index + delta + visibleRows.length) % visibleRows.length
+      const row = visibleRows[index]
       if (row && !row.disabled) {
         setActiveIndex(index)
         return
@@ -227,15 +273,15 @@ export function Listbox<T extends string>(props: ListboxProps<T>) {
   function moveToEdge(edge: 'first' | 'last') {
     const index =
       edge === 'first'
-        ? rows.findIndex((row) => !row.disabled)
-        : rows.map((row) => row.disabled).lastIndexOf(false)
+        ? visibleRows.findIndex((row) => !row.disabled)
+        : visibleRows.map((row) => row.disabled).lastIndexOf(false)
     if (index >= 0) setActiveIndex(index)
   }
 
   function findMatch(needle: string, from: number): number {
-    for (let seen = 0; seen < rows.length; seen++) {
-      const index = ((from + seen) % rows.length + rows.length) % rows.length
-      const row = rows[index]
+    for (let seen = 0; seen < visibleRows.length; seen++) {
+      const index = ((from + seen) % visibleRows.length + visibleRows.length) % visibleRows.length
+      const row = visibleRows[index]
       if (!row || row.disabled) continue
       if (row.label.toLowerCase().startsWith(needle)) return index
     }
@@ -304,7 +350,7 @@ export function Listbox<T extends string>(props: ListboxProps<T>) {
         // Prevent default so the button's own click does not toggle the menu
         // back shut right after the selection.
         event.preventDefault()
-        const row = rows[activeIndex]
+        const row = visibleRows[activeIndex]
         if (row) pick(row)
         break
       }
@@ -430,11 +476,69 @@ export function Listbox<T extends string>(props: ListboxProps<T>) {
                   maxHeight: position.maxHeight,
                 }
           }
-          // The menu holds no focusable nodes; without this a press on a row
-          // would move focus to the document and the keyboard would go blind.
-          onMouseDown={(event) => event.preventDefault()}
+          // The menu holds no focusable nodes - except the search box, which is
+          // why that one is opted out below; without this a press on a row would
+          // move focus to the document and the keyboard would go blind.
+          onMouseDown={(event) => {
+            if (searchable && event.target === searchRef.current) return
+            event.preventDefault()
+          }}
+          onKeyDown={(event) => {
+            if (!searchable) return
+            // With a search box the focus lives inside the menu, so the keys the
+            // trigger used to answer are answered here.
+            switch (event.key) {
+              case 'ArrowDown':
+                event.preventDefault()
+                step(1)
+                break
+              case 'ArrowUp':
+                event.preventDefault()
+                step(-1)
+                break
+              case 'Home':
+                event.preventDefault()
+                moveToEdge('first')
+                break
+              case 'End':
+                event.preventDefault()
+                moveToEdge('last')
+                break
+              case 'Enter':
+                event.preventDefault()
+                if (visibleRows[activeIndex]) pick(visibleRows[activeIndex])
+                break
+              case 'Escape':
+                event.preventDefault()
+                close(true)
+                break
+              default:
+                break
+            }
+          }}
         >
-          {rows.map((row, index) => (
+          {searchable ? (
+            <div className="listbox__search">
+              <input
+                ref={searchRef}
+                type="text"
+                value={query}
+                placeholder={props.searchPlaceholder}
+                aria-label={props.searchPlaceholder}
+                autoFocus
+                onChange={(event) => {
+                  setQuery(event.target.value)
+                  // The highlighted row has to belong to the new result, or
+                  // Enter would pick something the reader can no longer see.
+                  setActiveIndex(0)
+                }}
+              />
+            </div>
+          ) : null}
+          {nothingFound ? (
+            <div className="listbox__empty">{props.nothingFoundLabel}</div>
+          ) : null}
+          {visibleRows.map((row, index) => (
             <div
               key={index}
               id={optionId(index)}
@@ -445,6 +549,7 @@ export function Listbox<T extends string>(props: ListboxProps<T>) {
               title={row.hint}
               className={[
                 'listbox__option',
+                row.secondary === undefined ? '' : 'listbox__option--stacked',
                 index === activeIndex ? 'listbox__option--active' : '',
                 isSelected(row.value) ? 'listbox__option--selected' : '',
                 row.clear ? 'listbox__option--clear' : '',
@@ -457,7 +562,12 @@ export function Listbox<T extends string>(props: ListboxProps<T>) {
               {row.avatarUrl !== undefined ? (
                 <Avatar src={row.avatarUrl} name={row.label} size="sm" />
               ) : null}
-              <span>{row.label}</span>
+              <span className="listbox__label">
+                <span>{row.label}</span>
+                {row.secondary !== undefined ? (
+                  <span className="listbox__secondary">{row.secondary}</span>
+                ) : null}
+              </span>
               {isSelected(row.value) && !row.clear ? (
                 <Icon name="check" size={13} className="listbox__option-check" />
               ) : null}

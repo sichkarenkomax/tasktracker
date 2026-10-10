@@ -78,15 +78,26 @@ class OrganizationRepository:
             ),
         )
 
-    async def list_members(self, organization_id: UUID) -> list[tuple[OrganizationMember, User]]:
+    async def list_members(
+        self, organization_id: UUID
+    ) -> list[tuple[OrganizationMember, User, OrgPosition | None]]:
+        """Everyone in the organization, with the position they hold (stage 2.5).
+
+        The position title travels with the member because every place that
+        offers a list of people needs to say *who this is* - a picker that shows
+        thirty rows of similar names is a picker nobody can choose from. The join
+        is an outer one: most members hold no position, and an inner join would
+        quietly drop them out of the roster.
+        """
         statement = (
-            select(OrganizationMember, User)
+            select(OrganizationMember, User, OrgPosition)
             .join(User, User.id == OrganizationMember.user_id)
+            .outerjoin(OrgPosition, OrgPosition.id == OrganizationMember.position_id)
             .where(OrganizationMember.organization_id == organization_id)
             .order_by(User.username)
         )
         rows: list[tuple[Any, ...]] = await fetch_pairs(self._session, statement)
-        return [(row[0], row[1]) for row in rows]
+        return [(row[0], row[1], row[2]) for row in rows]
 
     async def list_for_user(self, user_id: UUID) -> list[tuple[Organization, OrganizationMember]]:
         statement = (

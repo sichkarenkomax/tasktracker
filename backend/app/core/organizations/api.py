@@ -182,8 +182,12 @@ async def list_members(
             role=member.role,
             joined_at=member.joined_at,
             user=UserSummaryRead.model_validate(account),
+            # The title, not the id: the picker writes it under the name (2.5), and
+            # a client that had to resolve ids into titles would do it once per
+            # row, in the browser.
+            position_title=position.title if position is not None else None,
         )
-        for member, account in rows
+        for member, account, position in rows
     ]
 
 
@@ -481,7 +485,7 @@ async def read_structure(
             manager_id=member.manager_id,
             deputies=snapshot.deputies.get(member.user_id, []),
         )
-        for member, _ in snapshot.members
+        for member, _, _ in snapshot.members
     }
     return OrgStructureRead(
         departments=[DepartmentRead.model_validate(row) for row in snapshot.departments],
@@ -492,8 +496,9 @@ async def read_structure(
                 role=member.role,
                 joined_at=member.joined_at,
                 user=UserSummaryRead.model_validate(account),
+                position_title=position.title if position is not None else None,
             )
-            for member, account in snapshot.members
+            for member, account, position in snapshot.members
         ],
         placements=placements,
     )

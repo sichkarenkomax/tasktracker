@@ -4,6 +4,7 @@ import { useI18n } from '../../../core/i18n'
 import { Icon } from '../../../core/layout/Icon'
 import type { Member } from '../../../core/organizations/api'
 import { Listbox } from '../../../core/ui/Listbox'
+import { PersonSelect } from '../../../core/users/PersonSelect'
 import { useTaskVocabulary } from './Badges'
 import type { Project } from '../../../core/projects/api'
 import {
@@ -184,13 +185,9 @@ export function TaskFilterBar({ value, members, projects, onChange }: TaskFilter
         return (
           <label key="assignee" className="filter-select">
             <span>{t('filters.byAssignee')}</span>
-            <Listbox<string>
+            <PersonSelect
+              members={members}
               value={value.assignee_id ?? null}
-              options={members.map((member) => ({
-                value: member.user_id,
-                label: member.first_name || member.username,
-                avatarUrl: member.avatar_url,
-              }))}
               placeholder={t('tasks.anyone')}
               clearable
               onChange={(next) => onChange({ ...value, assignee_id: next ?? undefined })}
