@@ -1,0 +1,6 @@
+# Line endings are stored as LF and checked out as the platform's.
+#
+# Nine files had been stored with CRLF, which is why every edited line of
+# them was reported as trailing whitespace by `git diff --check` - the check
+# was noisy on exactly the files that most needed it.
+* text=auto
