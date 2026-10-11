@@ -17,7 +17,10 @@ from app.core.errors import ConflictError, NotFoundError, ValidationError
 from app.core.events.names import (
     ORG_DEPARTMENT_CREATED,
     ORG_DEPARTMENT_DELETED,
+    ORG_DEPARTMENT_DEPUTY_ADDED,
+    ORG_DEPARTMENT_DEPUTY_REMOVED,
     ORG_DEPARTMENT_UPDATED,
+    ORG_DEPARTMENTS_REORDERED,
     ORG_DEPUTY_ADDED,
     ORG_DEPUTY_REMOVED,
     ORG_MEMBER_PLACED,
@@ -44,6 +47,7 @@ from app.core.organizations.models import (
     Team,
 )
 from app.core.organizations.repository import (
+    DepartmentDeputyRepository,
     DepartmentRepository,
     DeputyRepository,
     OrganizationRepository,
@@ -73,6 +77,7 @@ def org_structure_service(session: AsyncSession, bus: EventBus) -> OrgStructureS
         DepartmentRepository(session),
         PositionRepository(session),
         DeputyRepository(session),
+        DepartmentDeputyRepository(session),
         OrganizationRepository(session),
         bus,
     )
@@ -92,6 +97,8 @@ class OrgStructureSnapshot:
     members: list[tuple[OrganizationMember, User, OrgPosition | None]]
     #: user id -> the ids of the people who cover for them.
     deputies: dict[UUID, list[UUID]] = dataclass_field(default_factory=dict)
+    #: department id -> the ids of the people who act for the unit.
+    department_deputies: dict[UUID, list[UUID]] = dataclass_field(default_factory=dict)
 
 
 class OrganizationService:
@@ -397,12 +404,14 @@ class OrgStructureService:
         departments: DepartmentRepository,
         positions: PositionRepository,
         deputies: DeputyRepository,
+        department_deputies: DepartmentDeputyRepository,
         members: OrganizationRepository,
         bus: EventBus,
     ) -> None:
         self._departments = departments
         self._positions = positions
         self._deputies = deputies
+        self._department_deputies = department_deputies
         self._members = members
         self._bus = bus
 
@@ -561,6 +570,56 @@ class OrgStructureService:
                 return False
             current = row.parent_id
         return False
+
+    # --- order among siblings -----------------------------------------------
+
+    async def reorder_departments(
+        self, *, organization_id: UUID, actor: User, ordered_ids: list[UUID]
+    ) -> None:
+        """Set the order of one group of sibling departments.
+
+        Takes the whole order rather than "put this one at index 3", because the
+        alternative makes the caller compute an index the server cannot check
+        against a list it never sees, and two people dragging at once leave the
+        second one's index pointing into the first one's reordering.
+
+        The list must be exactly the siblings. A partial one would silently drop
+        the departments left out of the chart, and a list spanning two parents
+        would move a department out of its own row.
+        """
+        if len(ordered_ids) != len(set(ordered_ids)):
+            raise ValidationError(
+                "The same department is listed twice", details={"field": "ordered_ids"}
+            )
+
+        rows = await self._departments.list_all(organization_id)
+        by_id = {row.id: row for row in rows}
+        missing = [
+            str(department_id) for department_id in ordered_ids if department_id not in by_id
+        ]
+        if missing:
+            raise NotFoundError("No such department", details={"ids": missing})
+
+        parent_id = by_id[ordered_ids[0]].parent_id
+        expected = {row.id for row in rows if row.parent_id == parent_id}
+        if set(ordered_ids) != expected:
+            raise ValidationError(
+                "The list must contain every department with the same parent, and no others",
+                details={"field": "ordered_ids"},
+            )
+
+        for index, department_id in enumerate(ordered_ids):
+            by_id[department_id].position = index
+
+        await self._bus.publish_event(
+            ORG_DEPARTMENTS_REORDERED,
+            actor_id=actor.id,
+            payload={
+                "organization_id": str(organization_id),
+                "department_ids": [str(department_id) for department_id in ordered_ids],
+                "summary": "reordered departments",
+            },
+        )
 
     # --- positions ---------------------------------------------------------
 
@@ -814,6 +873,59 @@ class OrgStructureService:
             },
         )
 
+        # --- department deputies -----------------------------------------------
+
+    async def add_department_deputy(
+        self, *, organization_id: UUID, actor: User, department_id: UUID, deputy_id: UUID
+    ) -> None:
+        department = await self._departments.get(department_id, organization_id=organization_id)
+        if department is None:
+            raise NotFoundError("No such department")
+
+        if deputy_id == department.head_id:
+            # The head already runs the department; naming them its deputy would
+            # record a second answer to a question the head_id already answers,
+            # and the chart would then show the same name twice.
+            raise ValidationError(
+                "The head of a department cannot be its deputy", details={"field": "deputy_id"}
+            )
+        if not await self._members.is_member(organization_id, deputy_id):
+            raise ValidationError(
+                "A deputy must be a member of the organization", details={"field": "deputy_id"}
+            )
+
+        await self._department_deputies.add(
+            organization_id=organization_id, department_id=department_id, deputy_id=deputy_id
+        )
+        await self._bus.publish_event(
+            ORG_DEPARTMENT_DEPUTY_ADDED,
+            actor_id=actor.id,
+            payload={
+                "organization_id": str(organization_id),
+                "department_id": str(department_id),
+                "deputy_id": str(deputy_id),
+                "summary": "added a department deputy",
+            },
+        )
+
+    async def remove_department_deputy(
+        self, *, organization_id: UUID, actor: User, department_id: UUID, deputy_id: UUID
+    ) -> None:
+        if not await self._department_deputies.remove(
+            organization_id=organization_id, department_id=department_id, deputy_id=deputy_id
+        ):
+            raise NotFoundError("That deputy is not recorded for this department")
+        await self._bus.publish_event(
+            ORG_DEPARTMENT_DEPUTY_REMOVED,
+            actor_id=actor.id,
+            payload={
+                "organization_id": str(organization_id),
+                "department_id": str(department_id),
+                "deputy_id": str(deputy_id),
+                "summary": "removed a department deputy",
+            },
+        )
+
     # --- the whole picture --------------------------------------------------
 
     async def snapshot(self, organization_id: UUID) -> OrgStructureSnapshot:
@@ -835,9 +947,14 @@ class OrgStructureService:
         for user_id, deputy_ids in await self._deputies.list_all(organization_id):
             deputies.setdefault(user_id, []).extend(deputy_ids)
 
+        department_deputies: dict[UUID, list[UUID]] = {}
+        for department_id, deputy_ids in await self._department_deputies.list_all(organization_id):
+            department_deputies.setdefault(department_id, []).extend(deputy_ids)
+
         return OrgStructureSnapshot(
             departments=departments,
             positions=positions,
             members=roster,
             deputies=deputies,
+            department_deputies=department_deputies,
         )

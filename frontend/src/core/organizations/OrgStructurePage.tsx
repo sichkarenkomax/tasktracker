@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 
 import { useAsync, useMutation } from '../hooks/useAsync'
 import { useI18n } from '../i18n'
@@ -10,7 +10,8 @@ import { Avatar } from '../users/Avatar'
 import { PersonSelect } from '../users/PersonSelect'
 import { flattenMember, organizationsApi } from './api'
 import type { Member, OrgPosition, OrgStructure, Placement } from './api'
-import { departmentSubtree, displayName, flattenDepartments } from './chartLayout'
+import { displayName, flattenDepartments } from './chartLayout'
+import { DepartmentPopup } from './DepartmentPopup'
 import { OrgChart } from './OrgChart'
 import { useOrganizationId } from './OrganizationContext'
 import { RequiresOrganization } from './RequiresOrganization'
@@ -46,9 +47,17 @@ function OrgStructure() {
   const capabilities = useCapabilities(organizationId)
   const [view, setView] = useState<View>('chart')
   const [selected, setSelected] = useState<string | null>(null)
-  const [selectedDepartment, setSelectedDepartment] = useState<string | null>(null)
   const [editing, setEditing] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
+  // Which department the popover is on, and what it hangs from. The anchor is
+  // kept in a ref as well as in the state because Popover measures against the
+  // live element on every scroll, and a stale copy in state would point at the
+  // node the popover was opened from even after the chart redrew under it.
+  const [departmentPopup, setDepartmentPopup] = useState<{
+    departmentId: string | null
+    parentId: string | null
+  } | null>(null)
+  const departmentAnchor = useRef<HTMLElement | null>(null)
 
   const structure = useAsync(
     () => (organizationId ? organizationsApi.structure(organizationId) : Promise.resolve(null)),
@@ -73,19 +82,22 @@ function OrgStructure() {
   }
 
   const selectPerson = (userId: string) => {
-    setSelectedDepartment(null)
+    setDepartmentPopup(null)
     setSelected((current) => (current === userId ? null : userId))
   }
 
-  const selectDepartment = (departmentId: string) => {
+  const openDepartment = (
+    departmentId: string | null,
+    parentId: string | null,
+    anchor: HTMLElement,
+  ) => {
     setSelected(null)
-    setSelectedDepartment((current) => (current === departmentId ? null : departmentId))
-  }
-
-  const onAddDepartment = (parentId: string) => {
-    setSelected(null)
-    setSelectedDepartment(parentId)
-    setEditing(true)
+    departmentAnchor.current = anchor
+    setDepartmentPopup((current) =>
+      current?.departmentId === departmentId && current?.parentId === parentId
+        ? null
+        : { departmentId, parentId },
+    )
   }
 
   return (
@@ -149,10 +161,8 @@ function OrgStructure() {
             <StructureEditor
               structure={structure.data}
               onChanged={structure.reload}
-              onSelectDepartment={(departmentId) => {
-                setSelected(null)
-                setSelectedDepartment(departmentId)
-              }}
+              onSelectDepartment={(departmentId, anchor) => openDepartment(departmentId, null, anchor)}
+              onAddDepartment={(anchor) => openDepartment(null, null, anchor)}
             />
           ) : null}
 
@@ -161,16 +171,24 @@ function OrgStructure() {
               structure={structure.data}
               members={members}
               selectedUserId={selected}
-              selectedDepartmentId={selectedDepartment}
+              selectedDepartmentId={departmentPopup?.departmentId ?? null}
               editable={canEdit}
               onSelect={selectPerson}
-              onSelectDepartment={selectDepartment}
-              onAddDepartment={onAddDepartment}
+              onSelectDepartment={(departmentId, anchor) => openDepartment(departmentId, null, anchor)}
+              onAddDepartment={(parentId, anchor) => openDepartment(null, parentId, anchor)}
               onReparentDepartment={async (departmentId, parentId) => {
                 await runAction(
                   organizationsApi.updateDepartment(organizationId, departmentId, {
                     parent_id: parentId,
                   }),
+                )
+              }}
+              onReorderDepartment={async (departmentId, targetId, zone) => {
+                // The chart is only rendered when there is data, but TypeScript
+                // cannot see through the closure that a load has not raced.
+                if (!structure.data) return
+                await runAction(
+                  reorder(organizationId, structure.data, departmentId, targetId, zone),
                 )
               }}
               onPlacePerson={async (userId, departmentId) => {
@@ -195,14 +213,17 @@ function OrgStructure() {
             />
           )}
 
-          {selectedDepartment && canEdit ? (
-            <DepartmentInspector
-              key={selectedDepartment}
+          {departmentPopup && canEdit ? (
+            <DepartmentPopup
+              key={departmentPopup.departmentId ?? `new:${departmentPopup.parentId ?? 'root'}`}
               structure={structure.data}
               members={members}
-              departmentId={selectedDepartment}
+              organizationId={organizationId}
+              departmentId={departmentPopup.departmentId}
+              parentId={departmentPopup.parentId}
+              anchorRef={departmentAnchor}
               onChanged={structure.reload}
-              onClose={() => setSelectedDepartment(null)}
+              onClose={() => setDepartmentPopup(null)}
             />
           ) : null}
 
@@ -224,6 +245,47 @@ function OrgStructure() {
 
 function toMembers(structure: OrgStructure): Member[] {
   return structure.members.map(flattenMember)
+}
+
+/**
+ * Move a department next to another one, as siblings.
+ *
+ * The parent is settled first, then the order. The reverse would be rejected by
+ * the server - the order endpoint insists on receiving exactly one group of
+ * siblings, and a department that has just changed parents is not yet among the
+ * target's.
+ */
+async function reorder(
+  organizationId: string,
+  structure: OrgStructure,
+  departmentId: string,
+  targetId: string,
+  zone: 'before' | 'after',
+): Promise<void> {
+  const dragged = structure.departments.find((item) => item.id === departmentId)
+  const target = structure.departments.find((item) => item.id === targetId)
+  if (!dragged || !target) return
+
+  if (dragged.parent_id !== target.parent_id) {
+    await organizationsApi.updateDepartment(organizationId, departmentId, {
+      parent_id: target.parent_id,
+    })
+  }
+
+  // The row the department will sit in, once it belongs there.
+  const siblings = structure.departments
+    .filter((item) => item.parent_id === target.parent_id)
+    .sort((left, right) => left.position - right.position)
+
+  const next = siblings.filter((item) => item.id !== departmentId)
+  const at = next.findIndex((item) => item.id === targetId)
+  if (at === -1) return
+  next.splice(zone === 'before' ? at : at + 1, 0, dragged)
+
+  await organizationsApi.reorderDepartments(
+    organizationId,
+    next.map((item) => item.id),
+  )
 }
 
 /**
@@ -402,20 +464,17 @@ function StructureEditor({
   structure,
   onChanged,
   onSelectDepartment,
+  onAddDepartment,
 }: {
   structure: OrgStructure
   onChanged: () => void
-  onSelectDepartment: (departmentId: string) => void
+  onSelectDepartment: (departmentId: string, anchor: HTMLElement) => void
+  onAddDepartment: (anchor: HTMLElement) => void
 }) {
   const { t } = useI18n()
   const organizationId = useOrganizationId()
-  const [adding, setAdding] = useState<'department' | 'position' | null>(null)
+  const [adding, setAdding] = useState<'position' | null>(null)
   const [error, setError] = useState<string | null>(null)
-
-  const addDepartment = useMutation<string, void>(async (name) => {
-    if (!organizationId) return
-    await organizationsApi.createDepartment(organizationId, { name })
-  })
 
   const addPosition = useMutation<string, void>(async (title) => {
     if (!organizationId) return
@@ -438,7 +497,6 @@ function StructureEditor({
 
   const failing =
     error ??
-    addDepartment.error ??
     addPosition.error ??
     removeDepartment.error ??
     removePosition.error
@@ -449,30 +507,16 @@ function StructureEditor({
     <section className="panel org__editor">
       <div className="org__editor-col">
         <h2>{t('org.departments')}</h2>
+        {/* Opens the same popover the pencil opens, with the name empty: a second
+            form for "add a department" would be a second answer to what one is. */}
         <button
           type="button"
           className="button button--ghost"
-          onClick={() => setAdding((value) => (value === 'department' ? null : 'department'))}
+          onClick={(event) => onAddDepartment(event.currentTarget)}
         >
           <Icon name="plus" size={14} />
           {t('org.addDepartment')}
         </button>
-
-        {adding === 'department' ? (
-          <NameForm
-            label={t('org.departmentName')}
-            submitLabel={t('app.create')}
-            pending={addDepartment.pending}
-            onSubmit={async (name) => {
-              setError(null)
-              const done = await addDepartment.run(name)
-              if (done !== null) {
-                setAdding(null)
-                onChanged()
-              }
-            }}
-          />
-        ) : null}
 
         <ul className="org__list">
           {departmentRows.map(({ department, depth }) => (
@@ -480,7 +524,7 @@ function StructureEditor({
               <button
                 type="button"
                 className="orglist__name"
-                onClick={() => onSelectDepartment(department.id)}
+                onClick={(event) => onSelectDepartment(department.id, event.currentTarget)}
               >
                 {depth > 0 ? (
                   <span className="orglist__branch" aria-hidden="true">
@@ -705,186 +749,6 @@ function NameForm({
         </button>
       </div>
     </form>
-  )
-}
-
-/**
- * One department, in full: name, place in the tree, and who heads it.
- *
- * Same contract as the person inspector - every control writes immediately and
- * independently - with one extra rule: the parent picker leaves out the
- * department's own subtree, so the loop the server would refuse cannot be
- * selected in the first place.
- */
-function DepartmentInspector({
-  structure,
-  members,
-  departmentId,
-  onChanged,
-  onClose,
-}: {
-  structure: OrgStructure
-  members: Member[]
-  departmentId: string
-  onChanged: () => void
-  onClose: () => void
-}) {
-  const { t } = useI18n()
-  const organizationId = useOrganizationId()
-  const [error, setError] = useState<string | null>(null)
-
-  const department = structure.departments.find((item) => item.id === departmentId)
-  const [name, setName] = useState(department?.name ?? '')
-
-  const addChild = useMutation<string, void>(async (childName) => {
-    if (!organizationId) return
-    await organizationsApi.createDepartment(organizationId, {
-      name: childName,
-      parent_id: departmentId,
-    })
-  })
-
-  if (!department || !organizationId) return null
-
-  const forbidden = departmentSubtree(structure.departments, departmentId)
-
-  const run = async (action: Promise<unknown>) => {
-    setError(null)
-    try {
-      await action
-      onChanged()
-    } catch (cause: unknown) {
-      setError(cause instanceof Error ? cause.message : t('error.generic'))
-    }
-  }
-
-  const saveName = () => {
-    const trimmed = name.trim()
-    if (!trimmed || trimmed === department.name) {
-      setName(department.name)
-      return
-    }
-    void run(organizationsApi.updateDepartment(organizationId, departmentId, { name: trimmed }))
-  }
-
-  return (
-    <section className="panel org__inspector">
-      <header className="org__inspector-head">
-        {/* A department is not a person and has no photograph: its mark is its
-            own letter on the quiet surface, not the accent circle people wear. */}
-        <span className="org__department-mark" aria-hidden="true">
-          {department.name.charAt(0).toUpperCase()}
-        </span>
-        <div>
-          <strong>{department.name}</strong>
-          <span className="muted">{t('org.departmentSettings')}</span>
-        </div>
-        <button type="button" className="icon-button" aria-label={t('app.cancel')} onClick={onClose}>
-          <Icon name="close" size={14} />
-        </button>
-      </header>
-
-      <div className="fields">
-        <label className="field">
-          <span>{t('org.departmentName')}</span>
-          <input
-            maxLength={200}
-            value={name}
-            disabled={addChild.pending}
-            onChange={(event) => setName(event.target.value)}
-            onBlur={saveName}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') {
-                event.preventDefault()
-                saveName()
-              }
-            }}
-          />
-        </label>
-
-        <label className="field">
-          <span>{t('org.parent')}</span>
-          <Listbox<string>
-            value={department.parent_id ?? null}
-            options={structure.departments
-              .filter((item) => !forbidden.has(item.id))
-              .map((item) => ({ value: item.id, label: item.name }))}
-            placeholder={t('org.topLevel')}
-            clearable
-            onChange={(next) =>
-              void run(
-                organizationsApi.updateDepartment(organizationId, departmentId, {
-                  parent_id: next ?? null,
-                }),
-              )
-            }
-          />
-        </label>
-
-        <label className="field">
-          <span>{t('org.head')}</span>
-          <PersonSelect
-            members={members}
-            value={department.head_id ?? null}
-            placeholder={t('org.noManager')}
-            clearable
-            onChange={(next) =>
-              void run(
-                organizationsApi.updateDepartment(organizationId, departmentId, {
-                  head_id: next ?? null,
-                }),
-              )
-            }
-          />
-        </label>
-      </div>
-
-      <div className="org__deputies">
-        <h3>{t('org.addSubdepartment')}</h3>
-        <NameForm
-          label={t('org.departmentName')}
-          submitLabel={t('app.create')}
-          pending={addChild.pending}
-          onSubmit={async (childName) => {
-            setError(null)
-            const done = await addChild.run(childName)
-            if (done !== null) onChanged()
-          }}
-        />
-      </div>
-
-      <div className="org__deputies">
-        <h3>{t('org.deleteDepartment')}</h3>
-        <button
-          type="button"
-          className="button button--ghost"
-          onClick={() => {
-            if (!window.confirm(t('org.deleteDepartmentConfirm', { name: department.name }))) {
-              return
-            }
-            void (async () => {
-              setError(null)
-              try {
-                await organizationsApi.deleteDepartment(organizationId, departmentId)
-                onClose()
-                onChanged()
-              } catch (cause: unknown) {
-                setError(cause instanceof Error ? cause.message : t('error.generic'))
-              }
-            })()
-          }}
-        >
-          <Icon name="trash" size={14} />
-          {t('org.deleteDepartment')}
-        </button>
-      </div>
-
-      {error ? (
-        <p className="notice notice--error" role="alert">
-          {error}
-        </p>
-      ) : null}
-    </section>
   )
 }
 

@@ -184,6 +184,12 @@ class DepartmentUpdate(OrgWriteModel):
         return field in self.model_fields_set
 
 
+class DepartmentReorder(OrgWriteModel):
+    """Every department of one group, in the order they should sit."""
+
+    ordered_ids: list[UUID] = Field(min_length=1)
+
+
 class DepartmentRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -262,6 +268,11 @@ class OrgStructureRead(BaseModel):
     positions: list[PositionRead]
     members: list[MembershipRead]
     placements: dict[UUID, PlacementRead]
+    #: department id -> the people who act for that unit while its head is away.
+    #: Alongside ``placements`` rather than inside a department, because the
+    #: relation is many-to-many: a department can have several deputies and one
+    #: person can act for several departments.
+    department_deputies: dict[UUID, list[UUID]] = Field(default_factory=dict)
 
 
 class DeputyAdd(OrgWriteModel):

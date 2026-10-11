@@ -252,6 +252,66 @@ class MemberDeputy(UUIDPrimaryKeyMixin, Base):
     )
 
 
+class DepartmentDeputy(UUIDPrimaryKeyMixin, Base):
+    """Somebody who acts for a department while its head is away.
+
+    Separate from ``MemberDeputy`` rather than a nullable ``department_id`` column
+    on it. The two answer different questions - "who covers for this person" and
+    "who acts for this unit" - and no row is ever both at once. One table would
+    force every reader to ask which half is filled, and would give the same
+    unique constraint two meanings depending on the row.
+
+    As with a person's deputy, a table rather than a column because the relation
+    is many-to-many and not derivable from the tree: a department may have two
+    deputies while they are away, and one person may act for several units. A
+    deputy inherits no permission - the point is to record who to call while the
+    head is out, not to widen what they can reach.
+
+    The department key cascades: deleting a department removes the rows naming
+    its deputies, so a deputy cannot outlive the unit it belonged to and be
+    discovered later against nothing.
+    """
+
+    __tablename__ = "org_department_deputies"
+
+    organization_id: Mapped[UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    #: The department being covered for.
+    department_id: Mapped[UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("org_departments.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    #: The person who acts for it.
+    deputy_id: Mapped[UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    added_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id",
+            "department_id",
+            "deputy_id",
+            name="uq_org_department_deputy",
+        ),
+        Index("ix_org_department_deputies_department_id", "department_id"),
+        Index("ix_org_department_deputies_deputy_id", "deputy_id"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<DepartmentDeputy {self.department_id!r} -> {self.deputy_id!r}>"
+
+
 class Team(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "teams"
 

@@ -543,6 +543,284 @@ class TestDeputies:
         assert response.status_code == 404
 
 
+class TestDepartmentOrder:
+    """Dragging a block sideways changes the order of siblings.
+
+    The chart offers the whole order rather than an index, so these pin down what
+    the server refuses: a list that is not exactly one group of siblings would
+    either drop departments off the chart or move one out of its own row.
+    """
+
+    async def _order(
+        self, client: AsyncClient, owner: dict[str, Any], ids: list[str]
+    ) -> Any:
+        return await client.put(
+            f"/api/v1/organizations/{owner['organization']['id']}/departments/order",
+            json={"ordered_ids": ids},
+            headers=auth_headers(owner["token"]),
+        )
+
+    async def _read_order(self, client: AsyncClient, owner: dict[str, Any]) -> list[str]:
+        response = await client.get(
+            f"/api/v1/organizations/{owner['organization']['id']}/structure",
+            headers=auth_headers(owner["token"]),
+        )
+        assert response.status_code == 200, response.text
+        rows = [
+            row for row in response.json()["departments"] if row["parent_id"] is None
+        ]
+        rows.sort(key=lambda row: row["position"])
+        return [row["id"] for row in rows]
+
+    async def test_the_order_is_kept(self, client: AsyncClient, owner: dict[str, Any]) -> None:
+        first = await _department(client, owner, "Alpha")
+        second = await _department(client, owner, "Beta")
+        third = await _department(client, owner, "Gamma")
+
+        response = await self._order(client, owner, [third["id"], first["id"], second["id"]])
+
+        assert response.status_code == 200, response.text
+        assert await self._read_order(client, owner) == [third["id"], first["id"], second["id"]]
+
+    async def test_a_partial_list_is_refused(
+        self, client: AsyncClient, owner: dict[str, Any]
+    ) -> None:
+        """Leaving one out would silently drop it off the chart."""
+        await _department(client, owner, "Alpha")
+        beta = await _department(client, owner, "Beta")
+        await _department(client, owner, "Gamma")
+
+        response = await self._order(client, owner, [beta["id"]])
+
+        assert response.status_code == 422
+
+    async def test_a_list_spanning_two_parents_is_refused(
+        self, client: AsyncClient, owner: dict[str, Any]
+    ) -> None:
+        parent = await _department(client, owner, "Engineering")
+        child = await _department(client, owner, "Backend", parent_id=parent["id"])
+
+        # A root and its own child: a valid-looking list that would move the
+        # child out of its row into the top level.
+        response = await self._order(client, owner, [parent["id"], child["id"]])
+
+        assert response.status_code == 422
+
+    async def test_a_repeated_department_is_refused(
+        self, client: AsyncClient, owner: dict[str, Any]
+    ) -> None:
+        first = await _department(client, owner, "Alpha")
+        second = await _department(client, owner, "Beta")
+
+        response = await self._order(client, owner, [first["id"], first["id"], second["id"]])
+
+        assert response.status_code == 422
+
+    async def test_another_organizations_department_is_not_found(
+        self, client: AsyncClient, owner: dict[str, Any]
+    ) -> None:
+        first = await _department(client, owner, "Alpha")
+
+        response = await self._order(
+            client,
+            owner,
+            [first["id"], "00000000-0000-0000-0000-000000000000"],
+        )
+
+        assert response.status_code == 404
+
+    async def test_an_empty_list_is_refused(self, client: AsyncClient, owner: dict[str, Any]) -> None:
+        response = await self._order(client, owner, [])
+
+        assert response.status_code == 422
+
+    async def test_a_member_may_not_reorder(
+        self, client: AsyncClient, owner: dict[str, Any], outsider: dict[str, Any]
+    ) -> None:
+        alpha = await _department(client, owner, "Alpha")
+        beta = await _department(client, owner, "Beta")
+
+        response = await client.put(
+            f"/api/v1/organizations/{owner['organization']['id']}/departments/order",
+            json={"ordered_ids": [beta["id"], alpha["id"]]},
+            headers=auth_headers(outsider["token"]),
+        )
+
+        assert response.status_code == 403
+
+
+class TestDepartmentDeputies:
+    """Who acts for a department while its head is away.
+
+    The same questions the personal deputy has to answer, and one it does not:
+    a head cannot deputize for their own department, because the head already
+    runs it and the chart would show the same name twice.
+    """
+
+    async def _structure(self, client: AsyncClient, owner: dict[str, Any]) -> dict[str, Any]:
+        response = await client.get(
+            f"/api/v1/organizations/{owner['organization']['id']}/structure",
+            headers=auth_headers(owner["token"]),
+        )
+        assert response.status_code == 200, response.text
+        return response.json()
+
+    async def _add(
+        self, client: AsyncClient, owner: dict[str, Any], department_id: str, deputy_id: str
+    ) -> Any:
+        return await client.post(
+            f"/api/v1/organizations/{owner['organization']['id']}"
+            f"/departments/{department_id}/deputies",
+            json={"deputy_id": deputy_id},
+            headers=auth_headers(owner["token"]),
+        )
+
+    async def test_add_and_read(
+        self, client: AsyncClient, owner: dict[str, Any], outsider: dict[str, Any]
+    ) -> None:
+        member_id = await _add_member(client, owner, outsider)
+        department = await _department(client, owner, "Engineering")
+
+        assert (await self._add(client, owner, department["id"], member_id)).status_code == 201
+
+        body = await self._structure(client, owner)
+        assert body["department_deputies"][department["id"]] == [member_id]
+
+    async def test_two_departments_and_one_person(
+        self, client: AsyncClient, owner: dict[str, Any], outsider: dict[str, Any]
+    ) -> None:
+        """Many-to-many, which is why this is a table and not a column."""
+        member_id = await _add_member(client, owner, outsider)
+        first = await _department(client, owner, "Engineering")
+        second = await _department(client, owner, "Sales")
+
+        await self._add(client, owner, first["id"], member_id)
+        await self._add(client, owner, second["id"], member_id)
+
+        body = await self._structure(client, owner)
+        assert body["department_deputies"][first["id"]] == [member_id]
+        assert body["department_deputies"][second["id"]] == [member_id]
+
+    async def test_the_head_cannot_deputize_for_their_own_department(
+        self, client: AsyncClient, owner: dict[str, Any]
+    ) -> None:
+        department = await _department(client, owner, "Engineering")
+        # head_id is settable by update, not by create - same rule as everywhere
+        # else in this API.
+        headed = await client.patch(
+            f"/api/v1/organizations/{owner['organization']['id']}/departments/{department['id']}",
+            json={"head_id": owner["user"]["id"]},
+            headers=auth_headers(owner["token"]),
+        )
+        assert headed.status_code == 200, headed.text
+
+        response = await self._add(client, owner, department["id"], owner["user"]["id"])
+
+        assert response.status_code == 422
+
+    async def test_a_stranger_is_refused(
+        self, client: AsyncClient, owner: dict[str, Any], outsider: dict[str, Any]
+    ) -> None:
+        department = await _department(client, owner, "Engineering")
+
+        response = await self._add(client, owner, department["id"], outsider["user"]["id"])
+
+        assert response.status_code == 422
+
+    async def test_another_organizations_department_is_not_found(
+        self, client: AsyncClient, owner: dict[str, Any], outsider: dict[str, Any]
+    ) -> None:
+        """The department id is looked up inside the caller's organization."""
+        member_id = await _add_member(client, owner, outsider)
+        department = await _department(client, owner, "Engineering")
+
+        response = await client.post(
+            f"/api/v1/organizations/{owner['organization']['id']}"
+            f"/departments/00000000-0000-0000-0000-000000000000/deputies",
+            json={"deputy_id": member_id},
+            headers=auth_headers(owner["token"]),
+        )
+
+        assert response.status_code == 404
+        assert department["id"] != response.json().get("id")
+
+    async def test_adding_twice_is_harmless(
+        self, client: AsyncClient, owner: dict[str, Any], outsider: dict[str, Any]
+    ) -> None:
+        member_id = await _add_member(client, owner, outsider)
+        department = await _department(client, owner, "Engineering")
+
+        first = await self._add(client, owner, department["id"], member_id)
+        second = await self._add(client, owner, department["id"], member_id)
+
+        assert first.status_code == 201
+        assert second.status_code == 201
+        body = await self._structure(client, owner)
+        assert body["department_deputies"][department["id"]] == [member_id]
+
+    async def test_remove(
+        self, client: AsyncClient, owner: dict[str, Any], outsider: dict[str, Any]
+    ) -> None:
+        member_id = await _add_member(client, owner, outsider)
+        department = await _department(client, owner, "Engineering")
+        await self._add(client, owner, department["id"], member_id)
+
+        response = await client.delete(
+            f"/api/v1/organizations/{owner['organization']['id']}"
+            f"/departments/{department['id']}/deputies/{member_id}",
+            headers=auth_headers(owner["token"]),
+        )
+
+        assert response.status_code == 204
+        body = await self._structure(client, owner)
+        assert department["id"] not in body["department_deputies"]
+
+    async def test_removing_something_absent_is_404(
+        self, client: AsyncClient, owner: dict[str, Any], outsider: dict[str, Any]
+    ) -> None:
+        department = await _department(client, owner, "Engineering")
+
+        response = await client.delete(
+            f"/api/v1/organizations/{owner['organization']['id']}"
+            f"/departments/{department['id']}/deputies/{outsider['user']['id']}",
+            headers=auth_headers(owner["token"]),
+        )
+
+        assert response.status_code == 404
+
+    async def test_deleting_the_department_takes_its_deputies_with_it(
+        self, client: AsyncClient, owner: dict[str, Any], outsider: dict[str, Any]
+    ) -> None:
+        """Otherwise a deputy would outlive the unit and be found against nothing."""
+        member_id = await _add_member(client, owner, outsider)
+        department = await _department(client, owner, "Engineering")
+        await self._add(client, owner, department["id"], member_id)
+
+        deleted = await client.delete(
+            f"/api/v1/organizations/{owner['organization']['id']}/departments/{department['id']}",
+            headers=auth_headers(owner["token"]),
+        )
+        assert deleted.status_code == 204, deleted.text
+
+        body = await self._structure(client, owner)
+        assert department["id"] not in body["department_deputies"]
+
+    async def test_a_member_may_not_write(
+        self, client: AsyncClient, owner: dict[str, Any], outsider: dict[str, Any]
+    ) -> None:
+        member_id = await _add_member(client, owner, outsider)
+        department = await _department(client, owner, "Engineering")
+
+        response = await client.post(
+            f"/api/v1/organizations/{owner['organization']['id']}"
+            f"/departments/{department['id']}/deputies",
+            json={"deputy_id": member_id},
+            headers=auth_headers(outsider["token"]),
+        )
+
+        assert response.status_code == 403
+
+
 class TestPermissions:
     async def test_a_member_may_read_but_not_write(
         self, client: AsyncClient, owner: dict[str, Any], outsider: dict[str, Any]

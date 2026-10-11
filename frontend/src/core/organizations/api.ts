@@ -119,9 +119,13 @@ export const organizationsApi = {
     return api.get<OrgStructure>(`/organizations/${id}/structure`)
   },
 
-  createDepartment(id: string, body: { name: string; parent_id?: string | null }) {
+  createDepartment(
+    id: string,
+    body: { name: string; description?: string | null; parent_id?: string | null },
+  ) {
     return api.post<Department>(`/organizations/${id}/departments`, {
       name: body.name,
+      description: body.description ?? null,
       parent_id: body.parent_id ?? null,
     })
   },
@@ -129,7 +133,12 @@ export const organizationsApi = {
   updateDepartment(
     id: string,
     departmentId: string,
-    body: { name?: string; parent_id?: string | null; head_id?: string | null },
+    body: {
+      name?: string
+      description?: string | null
+      parent_id?: string | null
+      head_id?: string | null
+    },
   ) {
     // Spread rather than a fixed shape: `null` on a key means "clear it" and an
     // absent key means "leave it alone", so the two cannot be collapsed.
@@ -138,6 +147,23 @@ export const organizationsApi = {
 
   deleteDepartment(id: string, departmentId: string) {
     return api.delete<void>(`/organizations/${id}/departments/${departmentId}`)
+  },
+
+  /** Set the order of one group of siblings - the whole order, not an index. */
+  reorderDepartments(id: string, orderedIds: string[]) {
+    return api.put<void>(`/organizations/${id}/departments/order`, {
+      ordered_ids: orderedIds,
+    })
+  },
+
+  addDepartmentDeputy(id: string, departmentId: string, deputyId: string) {
+    return api.post<void>(`/organizations/${id}/departments/${departmentId}/deputies`, {
+      deputy_id: deputyId,
+    })
+  },
+
+  removeDepartmentDeputy(id: string, departmentId: string, deputyId: string) {
+    return api.delete<void>(`/organizations/${id}/departments/${departmentId}/deputies/${deputyId}`)
   },
 
   createPosition(id: string, body: { title: string; rank?: number | null }) {
@@ -224,4 +250,9 @@ export interface OrgStructure {
   positions: OrgPosition[]
   members: MembershipWithUser[]
   placements: Record<string, Placement>
+  /** Department id -> the people who act for that unit while its head is away.
+   * A map rather than a field on `Department` because the relation is
+   * many-to-many: two deputies while they are out, one person acting for
+   * several units. */
+  department_deputies: Record<string, string[]>
 }

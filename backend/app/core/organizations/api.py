@@ -27,6 +27,7 @@ from app.core.organizations.repository import (
 from app.core.organizations.schemas import (
     DepartmentCreate,
     DepartmentRead,
+    DepartmentReorder,
     DepartmentUpdate,
     DeputyAdd,
     MemberAdd,
@@ -622,7 +623,27 @@ async def read_structure(
             for member, account, position in snapshot.members
         ],
         placements=placements,
+        department_deputies=snapshot.department_deputies,
     )
+
+
+@router.put(
+    "/organizations/{organization_id}/departments/order",
+    summary="Set the order of sibling departments",
+)
+async def reorder_departments(
+    organization_id: UUID,
+    payload: DepartmentReorder,
+    user: Annotated[User, Depends(require_permission("orgstructure.manage"))],
+    session: SessionDep,
+    bus: EventBusDep,
+) -> None:
+    await (await _org_structure(session, bus)).reorder_departments(
+        organization_id=organization_id,
+        actor=user,
+        ordered_ids=payload.ordered_ids,
+    )
+    await session.commit()
 
 
 @router.post(
@@ -818,6 +839,50 @@ async def place_member(
         manager_id=member.manager_id,
         deputies=deputies,
     )
+
+
+@router.post(
+    "/organizations/{organization_id}/departments/{department_id}/deputies",
+    status_code=status.HTTP_201_CREATED,
+    summary="Record somebody as a deputy for a department",
+)
+async def add_department_deputy(
+    organization_id: UUID,
+    department_id: UUID,
+    payload: DeputyAdd,
+    user: Annotated[User, Depends(require_permission("orgstructure.manage"))],
+    session: SessionDep,
+    bus: EventBusDep,
+) -> None:
+    await (await _org_structure(session, bus)).add_department_deputy(
+        organization_id=organization_id,
+        actor=user,
+        department_id=department_id,
+        deputy_id=payload.deputy_id,
+    )
+    await session.commit()
+
+
+@router.delete(
+    "/organizations/{organization_id}/departments/{department_id}/deputies/{deputy_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Remove a department deputy",
+)
+async def remove_department_deputy(
+    organization_id: UUID,
+    department_id: UUID,
+    deputy_id: UUID,
+    user: Annotated[User, Depends(require_permission("orgstructure.manage"))],
+    session: SessionDep,
+    bus: EventBusDep,
+) -> None:
+    await (await _org_structure(session, bus)).remove_department_deputy(
+        organization_id=organization_id,
+        actor=user,
+        department_id=department_id,
+        deputy_id=deputy_id,
+    )
+    await session.commit()
 
 
 @router.post(

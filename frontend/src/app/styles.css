@@ -90,6 +90,11 @@
   --surface-raised: #ffffff;
   --page: #f1f1f4;
   --text: #0f121a;
+  /* The org chart's header band. Dark in light mode, and a lighter step above the
+     page in the dark ones - a black header on a dark page disappears, and the
+     header is the one part that has to stay readable at a glance. */
+  --org-head-bg: #1b3f8f;
+  --org-head-text: #ffffff;
   --text-muted: #5a667e;
   --text-faint: #7b879e;
   --text-disabled: #a1abbf;
@@ -155,6 +160,8 @@
     --surface-raised: #1e2024;
     --page: #0e0f10;
     --text: #ffffff;
+    --org-head-bg: #2a3f6b;
+    --org-head-text: #ffffff;
     --text-muted: #c1c9d6;
     --text-faint: #8e99af;
     --text-disabled: #5a667e;
@@ -212,6 +219,8 @@
   --surface-raised: #26262a;
   --page: #0d0d0f;
   --text: #f4f4f2;
+  --org-head-bg: #3d4a6b;
+  --org-head-text: #ffffff;
   --text-muted: #a7a7ad;
   --text-faint: #7b7b80;
   --text-disabled: #56565c;
@@ -598,133 +607,316 @@ ol {
 /* ------------------------------------------------------- org structure --- */
 
 /**
- * The chart.
+ * The chart (2.14).
  *
- * Boxes nested and indented rather than a free-floating canvas with absolutely
- * positioned nodes. It looks less like a drawing and behaves better: nothing can
- * be dragged off screen, nothing overlaps, and the same markup that renders it at
- * 3 people renders it at 300 because there is no geometry to compute.
+ * A tree of boxes, parent above its children, siblings in a row - the shape an
+ * organization is read in. It was nested indented containers before, which drew
+ * the same data as a filing cabinet: each unit was a box *inside* another box,
+ * and nothing said what hung from what.
+ *
+ * The connectors are drawn rather than computed. Each `<li>` grows two
+ * pseudo-elements that make the half-elbow up to a shared bus, and the bus draws
+ * itself across the row - so the lines follow the boxes when the tree changes
+ * shape, without a measurement pass and without a canvas.
+ *
+ * Scrolling is horizontal on purpose. A tree is wider than it is tall and
+ * squeezing it into the page width would wrap the names; the page scrolls, the
+ * chart does not reflow into nonsense.
  */
-.orgchart {
+.orgchart-wrap {
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
 }
 
-.orgbox {
-  padding: var(--space-3);
-  background: var(--surface);
+.orgchart {
+  /* The rails are read as structure, not as decoration: a tree whose connectors
+     are too faint is a list of boxes that happen to be indented. Mid-grey rather
+     than the hairline border token, which on the page colour is nearly the same
+     value as the background and disappears exactly where the eye needs it. */
+  --org-rail: 1px solid color-mix(in srgb, var(--text-muted) 45%, transparent);
+  --org-gap: 1.5rem;
+
+  display: flex;
+  /* `safe` is the whole trick. A chart wider than the page is normal - it scrolls,
+     and it should scroll from its first department. Plain `center` puts the middle
+     of the tree at the left edge of the window and hides both ends, so the reader
+     arrives at a diagram whose roots are off screen and has to hunt for them. */
+  justify-content: safe center;
+  padding: var(--space-4) var(--space-2) var(--space-5);
+  margin: 0;
+  overflow-x: auto;
+  list-style: none;
+}
+
+/* The vertical drop from a parent into the bus over its children. The row is
+   offset by one gap so the three lines stack without overlapping: the parent's
+   drop, then the bus, then each child's drop into its box. Sharing the band is
+   what makes a tree look doubled in the middle. */
+.orgnode__children {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  padding-top: var(--org-gap);
+  margin: 0;
+  list-style: none;
+}
+
+.orgnode__children::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 0;
+  height: var(--org-gap);
+  border-left: var(--org-rail);
+}
+
+.orgnode {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  position: relative;
+  /* Room for this node's own drop from the bus down to its box. */
+  padding: var(--org-gap) 0.375rem 0;
+}
+
+.orgchart > .orgnode {
+  padding-top: 0;
+}
+
+.orgchart > .orgnode > .orgnode__children {
+  padding-top: var(--org-gap);
+}
+
+/* The left half of the bus: a horizontal segment from this node's left edge to
+   its centre, where the drop begins. */
+.orgnode__children > .orgnode::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 50%;
+  width: 50%;
+  height: var(--org-gap);
+  border-top: var(--org-rail);
+}
+
+/* The right half: the same segment, plus the vertical drop at the centre. */
+.orgnode__children > .orgnode::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 50%;
+  height: var(--org-gap);
+  border-top: var(--org-rail);
+  border-left: var(--org-rail);
+}
+
+/* The bus starts and ends at the outer children's centres rather than at the
+   edges of the row: a rail that runs past the first box and stops in empty space
+   is a line to nowhere, and it is what makes a tree look like a drawing of a
+   tree rather than of the hierarchy. */
+.orgnode__children > .orgnode:first-child::before {
+  border: 0 none;
+}
+
+.orgnode__children > .orgnode:last-child::after {
+  border: 0 none;
+}
+
+/* So the first and the last child get their drop from the other half - and a
+   rounded corner where the bus turns down into them. */
+.orgnode__children > .orgnode:first-child:not(:only-child)::after {
+  border-top-left-radius: var(--radius);
+}
+
+.orgnode__children > .orgnode:last-child:not(:only-child)::before {
+  border-right: var(--org-rail);
+  border-top-right-radius: var(--radius);
+}
+
+/* One child: no bus, just the line the parent already drew and this node's own
+   drop continuing it. */
+.orgnode__children > .orgnode:only-child::before,
+.orgnode__children > .orgnode:only-child::after {
+  border-top: 0;
+}
+
+/**
+ * The box itself: a dark header with the name, a pale body with the rest.
+ *
+ * The split carries meaning rather than decoration - the header is what the
+ * department *is*, the body is who is in it - and it is why a collapsed box
+ * still reads as a box and not as a row of text.
+ */
+.orgnode__box {
+  display: flex;
+  flex-direction: column;
+  width: 14rem;
   border: 1px solid var(--surface-02-border);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-md);
+  background: var(--surface-01-bg);
   box-shadow: var(--shadow);
 }
 
-.orgbox--unplaced {
-  border-style: dashed;
+.orgnode__box--selected {
+  border-color: var(--accent);
 }
 
-.orgbox__head {
+/**
+ * The three drop zones (2.14).
+ *
+ * They have to look different from each other, not just be different: the whole
+ * point of splitting a box into a middle and two edges is that the reader can
+ * tell which of the three things they are about to get. An outline means "into
+ * it", a bar on the left edge means "before it", a bar on the right means
+ * "after it" - the bar is drawn where the block will land, not around the whole
+ * box, because a border round the box would read as "into it" again.
+ */
+.orgnode__box--drop-inside {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface-01-bg));
+}
+
+.orgnode__box--drop-before,
+.orgnode__box--drop-after {
+  position: relative;
+}
+
+.orgnode__box--drop-before::before,
+.orgnode__box--drop-after::before {
+  content: '';
+  position: absolute;
+  top: -0.375rem;
+  bottom: -0.375rem;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+
+.orgnode__box--drop-before::before {
+  inset-inline-start: -0.625rem;
+}
+
+.orgnode__box--drop-after::before {
+  inset-inline-end: -0.625rem;
+}
+
+/* The empty space around the tree: dropping there takes a department to the top
+   level, and the whole area says so while a block is in the air. */
+.orgchart-wrap--root {
+  outline: 2px dashed var(--accent);
+  outline-offset: 0.5rem;
+  border-radius: var(--radius-lg);
+}
+
+.orgnode__head {
   display: flex;
-  gap: var(--space-2);
+  gap: var(--space-1);
   align-items: center;
-  padding-bottom: var(--space-2);
-  margin-bottom: var(--space-3);
-  border-bottom: 1px solid var(--divider);
-  color: var(--text-muted);
-  font-size: 0.75rem;
+  padding: var(--space-2);
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
+  background: var(--org-head-bg);
+  color: var(--org-head-text);
+}
+
+.orgnode__name {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: 0;
+  padding: 0;
+  background: none;
+  color: inherit;
+  font-family: inherit;
+  font-size: 0.8125rem;
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  line-height: 1.25;
+  text-align: left;
+  overflow-wrap: anywhere;
+  cursor: pointer;
 }
 
-.orgbox__title {
-  color: var(--text);
-  font-size: 0.875rem;
-  font-weight: 600;
-  text-transform: none;
-  letter-spacing: 0;
+.orgnode__name--draggable {
+  cursor: grab;
 }
 
-.orgbox__head-name {
-  padding: 0 var(--space-2);
-  border-radius: var(--radius);
-  background: var(--nav-active);
-  color: var(--text-muted);
-  font-size: 0.6875rem;
-  font-weight: 500;
-  text-transform: none;
+.orgnode__toggle {
+  flex-shrink: 0;
 }
 
-.orgbox__head .muted {
-  margin-left: auto;
-  font-weight: 400;
+.orgnode__chevron--open {
+  transform: rotate(180deg);
 }
 
-.orgbox__people {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
+.orgnode__actions {
+  display: inline-flex;
+  flex-shrink: 0;
+  gap: 0.125rem;
 }
 
-.orgbox__children {
+.orgnode__actions .icon-button {
+  color: inherit;
+}
+
+/* An empty body collapses to nothing rather than holding a placeholder: a unit
+   with nobody in it should say so in one short line, not reserve the height of
+   a populated one. */
+.orgnode__body {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
-  margin-top: var(--space-3);
-  padding-top: var(--space-3);
-  border-top: 1px dashed var(--divider);
+  gap: var(--space-1);
+  padding: var(--space-2);
+  min-height: 0;
 }
 
-.orgbox__empty,
-.orgbox__hint {
+.orgnode__line {
+  display: flex;
+  gap: var(--space-2);
+  justify-content: space-between;
+  margin: 0;
+  font-size: 0.75rem;
+}
+
+.orgnode__role {
+  flex-shrink: 0;
+  color: var(--text-faint);
+}
+
+.orgnode__meta {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.6875rem;
+}
+
+.orgnode__empty,
+.orgnode__hint {
   margin: 0;
   color: var(--text-faint);
   font-size: 0.75rem;
 }
 
-.orgbox__hint {
+.orgnode__hint {
   margin-bottom: var(--space-2);
 }
 
-/* --- reading and editing a box ------------------------------------------ */
-
-.orgbox__toggle {
-  flex-shrink: 0;
-}
-
-.orgbox__chevron--open {
-  transform: rotate(180deg);
-}
-
-button.orgbox__title {
-  border: 0;
-  padding: 0;
-  background: none;
-  color: var(--text);
-  font-family: inherit;
-  font-size: 0.875rem;
-  font-weight: 600;
-  text-align: left;
-  cursor: pointer;
-}
-
-.orgbox__title--draggable {
-  cursor: grab;
-}
-
-.orgbox__actions {
-  display: inline-flex;
+.orgnode__people {
+  display: flex;
+  flex-wrap: wrap;
   gap: var(--space-1);
-  margin-left: var(--space-2);
 }
 
-.orgbox--selected {
-  border-color: var(--accent);
+/* The people with no department sit under the tree, outside it: they hang from
+   nothing, and a connector to nowhere would invent a level that is not there.
+   Dashed, because this box is a leftover bucket rather than a unit. */
+.orgunplaced {
+  width: min(32rem, 100%);
+  margin: 0 auto;
+  border-style: dashed;
 }
 
-.orgbox--dragover {
-  border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 6%, var(--surface));
+.orgnode__name--static {
+  cursor: default;
 }
 
 
@@ -739,6 +931,13 @@ button.orgbox__title {
   display: flex;
   gap: var(--space-2);
   align-items: center;
+  /* Sized by CSS, not by measuring the name in JS. The inline width this replaces
+     made every card a different width and the row ragged, and it grew without a
+     ceiling: one long name pushed its neighbours onto the next line. The cap here
+     is the same 18rem the measurement was clamped to, so short names still get
+     cards that fit them and long ones truncate instead of widening. */
+  min-width: 0;
+  max-width: 18rem;
   padding: var(--space-2);
   border: 1px solid var(--surface-02-border);
   border-radius: var(--radius-md);
@@ -2567,6 +2766,63 @@ textarea {
   width: 20rem;
   max-width: calc(100vw - 1rem);
   padding: var(--space-3);
+}
+
+/**
+ * The department popover (2.15).
+ *
+ * Wider than the column chooser beside it because it is a form with a roster in
+ * it, and narrower than the window so it never hangs off the side. The blocks are
+ * a form rather than one long stack of fields: five controls in a column with no
+ * headings read as one question, and "members" and "deputies" are questions of
+ * their own.
+ */
+.department-popup {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  width: 24rem;
+  max-width: calc(100vw - 1rem);
+  padding: var(--space-3);
+}
+
+.department-popup__head {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--divider);
+}
+
+.department-popup__block {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--divider);
+}
+
+.department-popup__block h3 {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.department-popup__actions {
+  display: flex;
+  gap: var(--space-2);
+  justify-content: flex-end;
+  padding-top: var(--space-2);
+}
+
+/* Delete on the left, close on the right: the destructive one is the one a hand
+   should not land on by accident while reaching for "done". */
+.department-popup__actions--split {
+  justify-content: space-between;
 }
 
 /* The panel's own title, with the reset link beside it.

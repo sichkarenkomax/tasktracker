@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.organizations.models import (
     Department,
+    DepartmentDeputy,
     MemberDeputy,
     Organization,
     OrganizationMember,
@@ -335,6 +336,59 @@ class DeputyRepository:
                 MemberDeputy.organization_id == organization_id,
                 MemberDeputy.user_id == user_id,
                 MemberDeputy.deputy_id == deputy_id,
+            ),
+        )
+        if row is None:
+            return False
+        await self._session.delete(row)
+        await self._session.flush()
+        return True
+
+
+class DepartmentDeputyRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def list_all(self, organization_id: UUID) -> list[tuple[UUID, list[UUID]]]:
+        """Every department deputy in this organization, grouped by department."""
+        statement = (
+            select(DepartmentDeputy.department_id, DepartmentDeputy.deputy_id)
+            .where(DepartmentDeputy.organization_id == organization_id)
+            .order_by(DepartmentDeputy.department_id, DepartmentDeputy.deputy_id)
+        )
+        rows = await self._session.execute(statement)
+        grouped: dict[UUID, list[UUID]] = {}
+        for department_id, deputy_id in rows:
+            grouped.setdefault(department_id, []).append(deputy_id)
+        return list(grouped.items())
+
+    async def add(
+        self, *, organization_id: UUID, department_id: UUID, deputy_id: UUID
+    ) -> DepartmentDeputy | None:
+        existing = await fetch_one(
+            self._session,
+            select(DepartmentDeputy).where(
+                DepartmentDeputy.organization_id == organization_id,
+                DepartmentDeputy.department_id == department_id,
+                DepartmentDeputy.deputy_id == deputy_id,
+            ),
+        )
+        if existing is not None:
+            return existing
+        row = DepartmentDeputy(
+            organization_id=organization_id, department_id=department_id, deputy_id=deputy_id
+        )
+        self._session.add(row)
+        await self._session.flush()
+        return row
+
+    async def remove(self, *, organization_id: UUID, department_id: UUID, deputy_id: UUID) -> bool:
+        row = await fetch_one(
+            self._session,
+            select(DepartmentDeputy).where(
+                DepartmentDeputy.organization_id == organization_id,
+                DepartmentDeputy.department_id == department_id,
+                DepartmentDeputy.deputy_id == deputy_id,
             ),
         )
         if row is None:
