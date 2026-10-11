@@ -7,6 +7,7 @@ import { Avatar } from '../users/Avatar'
 import { displayName } from '../auth/types'
 import { useAsync } from '../hooks/useAsync'
 import { useDateFormat } from '../format'
+import { usePeopleInfo } from '../settings/peopleInfo'
 import { useI18n, LOCALES } from '../i18n'
 import type { TranslationKey } from '../i18n'
 import { useOrganization } from '../organizations/OrganizationContext'
@@ -51,6 +52,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // not read here - the redraw is the point, and `<Outlet/>` below re-renders
   // every page with it.
   useDateFormat()
+  // And the same arrangement for "how much of a person is shown": eight pickers
+  // call `getPeopleInfo()` while rendering, and nothing was subscribed to the
+  // change - so the preference took effect on the next redraw of something
+  // unrelated, which meant "it did not apply" until a reload.
+  usePeopleInfo()
   const [navOpen, setNavOpen] = useState(false)
   const [navCollapsed, setNavCollapsed] = useState(() => {
     try {

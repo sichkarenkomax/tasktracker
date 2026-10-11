@@ -330,7 +330,7 @@ export function DateField(props: DateFieldProps) {
     const menu = menuRef.current
     const trigger = triggerRef.current
     if (!menu || !trigger) return
-    setPosition(computePosition(trigger.getBoundingClientRect(), menu.offsetHeight))
+    setPosition(computePosition(trigger.getBoundingClientRect(), menu.offsetHeight, menu.offsetWidth))
   }, [open])
 
   // The grid takes real focus on open, on the chosen day or on today.
@@ -377,7 +377,7 @@ useLayoutEffect(() => {
       const trigger = triggerRef.current
       const menu = menuRef.current
       if (!trigger || !menu) return
-      setPosition(computePosition(trigger.getBoundingClientRect(), menu.offsetHeight))
+      setPosition(computePosition(trigger.getBoundingClientRect(), menu.offsetHeight, menu.offsetWidth))
     }
     window.addEventListener('scroll', reposition, true)
     window.addEventListener('resize', reposition)
@@ -723,12 +723,16 @@ function stepFocus(event: React.KeyboardEvent, columns: number): boolean {
  * Where the popup sits: below the field when it fits, above it otherwise,
  * clamped to the viewport so a field near the right edge does not push it off.
  */
-function computePosition(rect: DOMRect, height: number): MenuPosition {
+function computePosition(rect: DOMRect, height: number, width: number): MenuPosition {
   const spaceBelow = window.innerHeight - rect.bottom - MENU_GAP
   const spaceAbove = rect.top - MENU_GAP
   const above = height > spaceBelow && spaceAbove > spaceBelow
   const available = Math.max(above ? spaceAbove : spaceBelow, 0)
-  const left = Math.max(EDGE_GAP, Math.min(rect.left, window.innerWidth - rect.width - EDGE_GAP))
+  // The clamp asks about the panel's own width, not the trigger's. The calendar
+  // is wider than the field that opened it, so clamping by the trigger width
+  // places a panel that does not fit: at the right-hand edge it ran off the
+  // screen by exactly the difference between the two widths.
+  const left = Math.max(EDGE_GAP, Math.min(rect.left, window.innerWidth - width - EDGE_GAP))
   return {
     top: above ? rect.top - MENU_GAP - Math.min(height, available) : rect.bottom + MENU_GAP,
     left,

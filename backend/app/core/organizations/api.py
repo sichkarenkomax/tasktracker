@@ -429,7 +429,7 @@ async def create_team(
     session: SessionDep,
     bus: EventBusDep,
 ) -> TeamRead:
-    team = await TeamService(TeamRepository(session), bus).create(
+    team = await TeamService(TeamRepository(session), bus, OrganizationRepository(session)).create(
         organization_id=organization_id,
         actor=user,
         name=payload.name,
@@ -497,7 +497,7 @@ async def update_team(
     if team is None:
         raise NotFoundError("Team not found")
 
-    updated = await TeamService(repository, bus).update(
+    updated = await TeamService(repository, bus, OrganizationRepository(session)).update(
         team, actor=user, name=payload.name, description=payload.description
     )
     await session.commit()
@@ -522,7 +522,7 @@ async def delete_team(
     if team is None:
         raise NotFoundError("Team not found")
 
-    await TeamService(repository, bus).delete(team, actor=user)
+    await TeamService(repository, bus, OrganizationRepository(session)).delete(team, actor=user)
     await session.commit()
 
 
@@ -545,7 +545,9 @@ async def add_team_member(
     if team is None:
         raise NotFoundError("Team not found")
 
-    await TeamService(repository, bus).add_member(team, actor=user, user_id=payload.user_id)
+    await TeamService(repository, bus, OrganizationRepository(session)).add_member(
+        team, actor=user, user_id=payload.user_id
+    )
     await session.commit()
     return {"status": "added"}
 
@@ -569,7 +571,9 @@ async def remove_team_member(
     if team is None:
         raise NotFoundError("Team not found")
 
-    await TeamService(repository, bus).remove_member(team, actor=user, user_id=user_id)
+    await TeamService(repository, bus, OrganizationRepository(session)).remove_member(
+        team, actor=user, user_id=user_id
+    )
     await session.commit()
 
 

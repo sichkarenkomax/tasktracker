@@ -384,10 +384,35 @@ async def read_user(
     await AuthorizationService(session).require_permission(
         user=user, organization_id=organization_id, permission="user.view"
     )
+    # Membership of the organization, not merely the right to look inside it. The
+    # permission above answers "may this reader read people"; it does not answer
+    # "is this person one of them", and an account id on a shared installation is
+    # guessable by anyone who has ever seen one. 404 rather than 403: the same
+    # answer as a person who does not exist, so the route does not confirm that
+    # the id belongs to somebody.
+    membership = await OrganizationRepository(session).get_member(
+        organization_id=organization_id, user_id=user_id
+    )
+    if membership is None:
+        raise NotFoundError("User not found")
     target = await UserRepository(session).get(user_id)
     if target is None:
         raise NotFoundError("User not found")
-    return UserSummary.model_validate(target)
+
+    # The address is a contact, and stage 2.6 lets a person withdraw it. This
+    # route used to hand it out regardless while `/profile` obeyed, so the choice
+    # existed with a second door beside it.
+    contacts_visible = await contacts_visibility(session).viewer_may_see(
+        viewer=user,
+        person_id=user_id,
+        organization_id=organization_id,
+        viewer_role=await AuthorizationService(session).require_member(
+            user=user, organization_id=organization_id
+        ),
+    )
+    if contacts_visible:
+        return UserSummary.model_validate(target)
+    return UserSummary.model_validate(target).model_copy(update={"email": None})
 
 
 @router.get("/{user_id}/profile", response_model=ProfileRead, summary="A member's profile")
@@ -418,6 +443,12 @@ async def read_profile(
     membership = await OrganizationRepository(session).get_member(
         organization_id=organization_id, user_id=user_id
     )
+    # And it is also the tenant boundary. Without this the card belongs to any
+    # account on the installation: the reader is checked against the
+    # organization, the target never was. A person outside it gets the same
+    # answer as a person who does not exist.
+    if membership is None:
+        raise NotFoundError("User not found")
     department_name = None
     position_title = None
     if membership is not None and membership.department_id is not None:
@@ -665,6 +696,15 @@ async def update_member(
             last_name=account_fields["last_name"],
         )
     if payload.birthday_set and payload.birthday != target.birthday:
+        # Checked here, written below, like every other field: the birthday is
+        # the person's own record, and a plain member writing into someone
+        # else's is what the audit caught. Guarding a field because it is easy to
+        # forget is not a plan, so the rule is stated instead: **every field of
+        # this schema passes through a check**, and the test says which field is
+        # being written when it fails.
+        await authorization.require_permission(
+            user=user, organization_id=organization_id, permission="user.update"
+        )
         await service.set_birthday(target, birthday=payload.birthday)
     if wants_phones:
         # Checked above, written here: the numbers are normalized (and refused

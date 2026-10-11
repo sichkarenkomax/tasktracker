@@ -267,9 +267,15 @@ class OrganizationService:
 
 
 class TeamService:
-    def __init__(self, teams: TeamRepository, bus: EventBus) -> None:
+    def __init__(
+        self, teams: TeamRepository, bus: EventBus, members: OrganizationRepository
+    ) -> None:
         self._teams = teams
         self._bus = bus
+        # Not for teams - for the rule that a team may only hold people who are
+        # members of the organization it belongs to. Injected so that the check
+        # lives with the write rather than with whoever remembered to add it.
+        self._members = members
 
     async def create(
         self, *, organization_id: UUID, actor: User, name: str, description: str | None = None
@@ -328,6 +334,16 @@ class TeamService:
     async def add_member(self, team: Team, *, actor: User, user_id: UUID) -> None:
         if await self._teams.has_member(team.id, user_id):
             raise ConflictError("User is already a member of this team")
+        # Membership in the organization, not merely in this team. Without it a
+        # row can be written naming somebody from another tenant, and the roster
+        # of this organization then lists a person who has nothing to do with it.
+        # Checked here rather than in the router so that no other caller can skip
+        # it - this is the same rule the tasks module already follows.
+        if (
+            await self._members.get_member(organization_id=team.organization_id, user_id=user_id)
+            is None
+        ):
+            raise ValidationError("That person is not a member of this organization")
         await self._teams.add_member(team.id, user_id)
         await self._bus.publish_event(
             TEAM_MEMBER_ADDED,
