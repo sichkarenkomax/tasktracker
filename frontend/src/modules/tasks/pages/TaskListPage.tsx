@@ -12,7 +12,9 @@ import { projectsApi } from '../../../core/projects/api'
 import type { Project } from '../../../core/projects/api'
 import { tasksApi } from '../api'
 import { TaskFilterBar, filtersFromSearch, filtersToSearch } from '../components/TaskFilterBar'
-import { TaskPagination, TaskTable } from '../components/TaskTable'
+import { TaskTable } from '../components/TaskTable'
+import { plural } from '../../../core/format'
+import { Pagination } from '../../../core/ui/Pagination'
 import type { Task, TaskFilters } from '../types'
 
 const PAGE_SIZE = 25
@@ -146,10 +148,12 @@ function TaskList() {
             projectScoped={Boolean(projectId)}
             onToggleDone={(task) => void toggleDone.run(task)}
           />
-          <TaskPagination
+          <Pagination
             total={page.data.total}
             limit={page.data.limit}
             offset={page.data.offset}
+            label={t('pagination.task')}
+            noun={plural(page.data.total, t('pagination.task'), t('pagination.tasks'))}
             onChange={(next) => {
               const params = new URLSearchParams(searchParams)
               params.set('offset', String(next))

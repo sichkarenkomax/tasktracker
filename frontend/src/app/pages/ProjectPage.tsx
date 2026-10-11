@@ -10,8 +10,8 @@ import { useOrganization } from '../../core/organizations/OrganizationContext'
 import { RequiresOrganization } from '../../core/organizations/RequiresOrganization'
 import { useCapabilities } from '../../core/permissions/capabilities'
 import { projectsApi } from '../../core/projects/api'
-import { activityApi } from '../../modules/tasks/api'
-import { ActivityFeed } from '../../modules/tasks/components/ActivityFeed'
+import { activityApi } from '../../core/activity/api'
+import { ActivityFeed } from '../../core/activity/ActivityFeed'
 
 /**
  * One project: what it is, and the way into its tasks.

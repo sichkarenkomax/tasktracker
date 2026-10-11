@@ -1,7 +1,6 @@
 import { api, buildQuery } from '../../../core/api/client'
 import type { Query } from '../../../core/api/client'
 import type {
-  ActivityPage,
   Comment,
   CommentPage,
   ParticipantRole,
@@ -131,34 +130,6 @@ export const tasksApi = {
   ): Promise<void> {
     return api.delete<void>(
       `/tasks/${taskId}/participants/${userId}${buildQuery(tenant(organizationId, { role }))}`,
-    )
-  },
-}
-
-export const activityApi = {
-  forOrganization(organizationId: string, limit = 25): Promise<ActivityPage> {
-    return api.get<ActivityPage>(
-      `/activity${buildQuery({ organization_id: organizationId, limit })}`,
-    )
-  },
-
-  /**
-   * The feed of one entity.
-   *
-   * Used by the task page, where §31 puts Activity next to Comments. A comment
-   * publishes `entity_type=task`, so asking per task returns comment activity too.
-   */
-  forEntity(
-    organizationId: string,
-    entityType: string,
-    entityId: string,
-    limit = 25,
-  ): Promise<ActivityPage> {
-    return api.get<ActivityPage>(
-      `/activity/entity/${entityType}/${entityId}${buildQuery({
-        organization_id: organizationId,
-        limit,
-      })}`,
     )
   },
 }

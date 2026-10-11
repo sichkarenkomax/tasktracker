@@ -266,8 +266,32 @@ export const en = {
   'activity.recent': 'Recent activity',
   'activity.empty': 'Nothing has happened here yet.',
   'activity.emptyOrg': 'No activity recorded yet.',
-  'activity.system': 'System',
+'activity.system': 'System',
   'activity.someone': 'Someone',
+  // The journal's action filter (2.11) has to name actions, and the feed never
+  // had to: it showed the summary instead. These are the actions a person can
+  // actually produce - anything else belongs to the system and is filtered by
+  // hand when somebody needs it.
+  'activity.action.task.created': 'created a task',
+  'activity.action.task.updated': 'changed a task',
+  'activity.action.task.completed': 'completed a task',
+  'activity.action.task.assigned': 'assigned a task',
+  'activity.action.comment.created': 'wrote a comment',
+  'activity.action.user.profile_updated': 'changed their profile',
+  'activity.action.file.created': 'uploaded a file',
+
+  // --- journal ----------------------------------------------------------
+  'journal.title': "What this person has done",
+  'journal.back': 'Back to the profile',
+  'journal.period': 'Period',
+  'journal.period_all': 'All time',
+  'journal.period_day': 'Last day',
+  'journal.period_week': 'Last week',
+  'journal.period_month': 'Last month',
+  'journal.action': 'Action',
+  'journal.action_all': 'Any action',
+  'journal.empty': 'Nothing recorded for this person here.',
+  'journal.denied': 'Your role cannot read the activity feed.',
 
   // --- members ----------------------------------------------------------
   'members.title': 'Members',

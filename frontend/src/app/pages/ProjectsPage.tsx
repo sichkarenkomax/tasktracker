@@ -11,8 +11,8 @@ import { RequiresOrganization } from '../../core/organizations/RequiresOrganizat
 import { useCapabilities } from '../../core/permissions/capabilities'
 import { projectsApi } from '../../core/projects/api'
 import type { Project } from '../../core/projects/api'
-import { activityApi } from '../../modules/tasks/api'
-import { ActivityFeed } from '../../modules/tasks/components/ActivityFeed'
+import { activityApi } from '../../core/activity/api'
+import { ActivityFeed } from '../../core/activity/ActivityFeed'
 
 /**
  * Projects, and the front door of the product (section 29).

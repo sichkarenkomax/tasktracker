@@ -36,6 +36,14 @@ export interface Capabilities {
   canUpdateUser: boolean
   /** May hand out a role in this organization. */
   canManageMembers: boolean
+  /**
+   * May read the activity feed, and therefore one person's journal (2.11).
+   *
+   * Every role holds it, exactly as every role may open the feed: the journal is
+   * the same records filtered to one person, and a narrower view behind a higher
+   * bar is how a product ends up hiding from the people who already had it.
+   */
+  canViewActivity: boolean
 }
 
 const VIEWER: Capabilities = {
@@ -47,6 +55,7 @@ const VIEWER: Capabilities = {
   canEditOrgStructure: false,
   canUpdateUser: false,
   canManageMembers: false,
+  canViewActivity: true,
 }
 
 const MEMBER: Capabilities = {

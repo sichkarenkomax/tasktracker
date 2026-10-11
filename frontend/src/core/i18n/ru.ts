@@ -262,8 +262,31 @@ export const ru: Record<TranslationKey, string> = {
   'activity.recent': 'Последние события',
   'activity.empty': 'Здесь пока ничего не происходило.',
   'activity.emptyOrg': 'Событий пока нет.',
-  'activity.system': 'Система',
+'activity.system': 'Система',
   'activity.someone': 'Кто-то',
+  // Фильтр по действиям в журнале (2.11): ленте он не нужен был - она показывала
+  // сводку. Это действия, которые может совершить человек; остальное идёт от
+  // системы и при необходимости отбирается руками.
+  'activity.action.task.created': 'создал задачу',
+  'activity.action.task.updated': 'изменил задачу',
+  'activity.action.task.completed': 'закрыл задачу',
+  'activity.action.task.assigned': 'назначил задачу',
+  'activity.action.comment.created': 'написал комментарий',
+  'activity.action.user.profile_updated': 'изменил профиль',
+  'activity.action.file.created': 'загрузил файл',
+
+  // --- журнал -----------------------------------------------------------
+  'journal.title': 'Что сделал этот человек',
+  'journal.back': 'К профилю',
+  'journal.period': 'Период',
+  'journal.period_all': 'За всё время',
+  'journal.period_day': 'За последний день',
+  'journal.period_week': 'За последнюю неделю',
+  'journal.period_month': 'За последний месяц',
+  'journal.action': 'Действие',
+  'journal.action_all': 'Любое действие',
+  'journal.empty': 'Здесь про этого человека ничего не записано.',
+  'journal.denied': 'Ваша роль не позволяет читать ленту событий.',
 
   // --- members ----------------------------------------------------------
   'members.title': 'Участники',

@@ -18,6 +18,7 @@ import { ProjectPage } from './pages/ProjectPage'
 import { ProjectsPage } from './pages/ProjectsPage'
 import { SystemPage } from './pages/SystemPage'
 import { MemberProfilePage } from './pages/MemberProfilePage'
+import { UserJournalPage } from './pages/UserJournalPage'
 import { UserProfilePage } from './pages/UserProfilePage'
 import { WelcomePage } from './pages/WelcomePage'
 import { OrgStructurePage } from '../core/organizations/OrgStructurePage'
@@ -77,6 +78,9 @@ export function App() {
                   {/* Before `/users/me`: React Router ranks the static segment first, but a
                       colleague's profile is a different screen from one's own. */}
                   <Route path="/users/:userId" element={<MemberProfilePage />} />
+                  {/* The journal is a screen of its own (2.11): the person is in the
+                      URL, so it can be linked to and cannot be mispicked. */}
+                  <Route path="/users/:userId/activity" element={<UserJournalPage />} />
                   <Route path="/users/me" element={<UserProfilePage />} />
                   <Route path="/preferences" element={<PreferencesPage />} />
                   <Route path="/structure" element={<OrgStructurePage />} />

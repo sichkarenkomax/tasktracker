@@ -1,5 +1,4 @@
 import { useI18n } from '../i18n'
-import type { TranslationKey } from '../i18n'
 
 /**
  * "When was this person last here" (stage 2.9).
@@ -88,49 +87,5 @@ export function PresenceDot({
       aria-label={t('profile.presenceOnline')}
       title={t('profile.presenceOnline')}
     />
-  )
-}
-
-/** What the server says about this person's answer, in the words to show for it.
- *
- * Three different states, and the difference between the last two is the whole
- * point of stage 2.9: "never seen" is an absence of information, while "hidden"
- * is information that this reader is not entitled to. A shared dash would make
- * a person who chose privacy look like a person who has never logged in.
- */
-export function PresenceLabel({
-  lastSeen,
-  visible,
-  className,
-}: {
-  lastSeen: string | null | undefined
-  visible: boolean
-  className?: string
-}) {
-  const { t, locale } = useI18n()
-
-  if (!visible) {
-    return (
-      <span className={className} title={t('profile.presenceHidden')}>
-        {t('people.hidden')}
-      </span>
-    )
-  }
-  if (isOnline(lastSeen)) {
-    return (
-      <span className={`${className ?? ''} presence presence--online`.trim()}>
-        <span className="presence__dot" aria-hidden="true" />
-        {t('profile.presenceOnline')}
-      </span>
-    )
-  }
-  const words = describeLastSeen(lastSeen, locale)
-  if (words === null) {
-    return <span className={`${className ?? ''} muted`.trim()}>{t('people.never')}</span>
-  }
-  return (
-    <span className={className} title={t('profile.presenceLastSeenTitle') as TranslationKey}>
-      {words}
-    </span>
   )
 }

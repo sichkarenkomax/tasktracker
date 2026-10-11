@@ -52,6 +52,16 @@ class Activity(UUIDPrimaryKeyMixin, Base):
 
     __table_args__ = (
         Index("ix_activities_organization_id_created_at", "organization_id", "created_at"),
+        # The journal on one person's profile filters by organization *and* actor
+        # and orders by time - three columns, in that order, so the index can be
+        # read left to right and used for all three at once (stage 2.11). The
+        # single-column one below stays for the projection, which writes by actor.
+        Index(
+            "ix_activities_organization_id_actor_id_created_at",
+            "organization_id",
+            "actor_id",
+            "created_at",
+        ),
         Index("ix_activities_actor_id", "actor_id"),
         Index("ix_activities_action", "action"),
     )

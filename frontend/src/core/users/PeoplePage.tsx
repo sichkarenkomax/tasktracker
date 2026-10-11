@@ -14,10 +14,12 @@ import { ColumnSettingsPanel } from '../ui/ColumnSettingsPanel'
 import { readColumns, writeColumns } from '../ui/columns'
 import type { ColumnSet } from '../ui/columns'
 import { Listbox } from '../ui/Listbox'
+import { Pagination } from '../ui/Pagination'
 import { Avatar } from './Avatar'
 import { usersApi } from './api'
-import type { Person, PersonPage, PeopleQuery } from './api'
-import { PresenceDot, PresenceLabel } from './presence'
+import type { Person, PeopleQuery } from './api'
+import { PresenceDot } from './presence'
+import { UserStatusLabel } from './UserStatusLabel'
 import type { TranslationKey } from '../i18n'
 
 /**
@@ -368,13 +370,24 @@ last_login_at: t('people.column.lastLogin'),
               </thead>
               <tbody>
                 {rows.map((person) => (
-                  <PersonRow key={person.id} person={person} columns={columns} />
+                  <PersonRow
+                    key={person.id}
+                    person={person}
+                    columns={columns}
+                    viewerId={user?.id ?? ''}
+                  />
                 ))}
               </tbody>
             </table>
           </div>
 
-          <Pagination page={page.data} offset={offset} onChange={setOffset} />
+          <Pagination
+            total={page.data.total}
+            limit={page.data.limit}
+            offset={offset}
+            label={t('people.title')}
+            onChange={setOffset}
+          />
         </>
       ) : null}
     </section>
@@ -422,7 +435,17 @@ function SortButton({
   )
 }
 
-function PersonRow({ person, columns }: { person: Person; columns: ColumnId[] }) {
+function PersonRow({
+  person,
+  columns,
+  viewerId,
+}: {
+  person: Person
+  columns: ColumnId[]
+  /** Who is reading the roster - a status source may show them a control, and
+   *  it cannot know who is looking without being told (2.10). */
+  viewerId: string
+}) {
   const { t } = useI18n()
   const name = person.first_name || person.username
 
@@ -491,7 +514,17 @@ case 'last_login_at':
         )
       case 'last_seen':
         return (
-          <PresenceLabel lastSeen={person.last_seen} visible={person.last_seen_visible} />
+          // Through the status contract (2.10) rather than straight to presence,
+          // so a status module covers the roster as well as the card.
+          <UserStatusLabel
+            subject={{
+              userId: person.id,
+              presenceVisible: person.last_seen_visible,
+              lastSeen: person.last_seen,
+              viewerId,
+              role: person.role,
+            }}
+          />
         )
     }
   }
@@ -502,44 +535,6 @@ case 'last_login_at':
         <td key={column}>{cell(column)}</td>
       ))}
     </tr>
-  )
-}
-
-function Pagination({
-  page,
-  offset,
-  onChange,
-}: {
-  page: PersonPage
-  offset: number
-  onChange: (next: number) => void
-}) {
-  const { t } = useI18n()
-  if (page.total <= page.limit) return null
-
-  const from = offset + 1
-  const to = Math.min(offset + page.limit, page.total)
-
-  return (
-    <nav className="pagination" aria-label={t('people.title')}>
-      <button
-        type="button"
-        className="button button--ghost"
-        disabled={offset === 0}
-        onClick={() => onChange(Math.max(0, offset - page.limit))}
-      >
-        {t('pagination.previous')}
-      </button>
-      <span className="muted">{t('pagination.showing', { from, to, total: page.total })}</span>
-      <button
-        type="button"
-        className="button button--ghost"
-        disabled={to >= page.total}
-        onClick={() => onChange(offset + page.limit)}
-      >
-        {t('pagination.next')}
-      </button>
-    </nav>
   )
 }
 

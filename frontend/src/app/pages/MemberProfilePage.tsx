@@ -19,7 +19,7 @@ import { formatPhone, isValidPhone, phoneDigits, toE164 } from '../../core/users
 import type { PhoneKind } from '../../core/users/phoneMask'
 import { usersApi } from '../../core/users/api'
 import type { MemberProfile } from '../../core/users/api'
-import { PresenceLabel } from '../../core/users/presence'
+import { UserStatusLabel } from '../../core/users/UserStatusLabel'
 
 /** "No department", "no position" - a real answer, not an empty one. */
 const ANY = 'any'
@@ -135,14 +135,31 @@ export function MemberProfilePage() {
             <>
               <dt>{t('profile.presence')}</dt>
               <dd>
-                <PresenceLabel
-                  lastSeen={person.last_seen}
-                  visible={person.last_seen_visible}
+                {/* Through the status contract (2.10), not straight to presence:
+                    a status module replaces this line without knowing this file
+                    exists, and with nothing installed it renders exactly what it
+                    rendered before. */}
+                <UserStatusLabel
+                  subject={{
+                    userId: person.id,
+                    presenceVisible: person.last_seen_visible,
+                    lastSeen: person.last_seen,
+                    viewerId: user?.id ?? '',
+                    role: person.role,
+                  }}
                 />
               </dd>
             </>
           ) : null}
-        </dl>
+</dl>
+
+        {/* A link, not a tab: the journal is somebody else's screen, and a card
+            that is already three panels long does not need a fourth (2.11). */}
+        <p className="muted">
+          <Link to={`/users/${person.id}/activity`} className="link">
+            {t('journal.title')}
+          </Link>
+        </p>
       </section>
 
       <section className="panel">

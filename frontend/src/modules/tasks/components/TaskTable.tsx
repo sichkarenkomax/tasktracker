@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 
-import { formatDateTime, isOverdue, plural } from '../../../core/format'
+import { formatDateTime, isOverdue } from '../../../core/format'
 import { useI18n } from '../../../core/i18n'
 import { Icon } from '../../../core/layout/Icon'
 import type { Member } from '../../../core/organizations/api'
@@ -178,43 +178,3 @@ export function TaskTable({
 }
 
 /** "Showing 1-25 of 130" plus prev/next, driven by the API's own `total`. */
-export function TaskPagination({
-  total,
-  limit,
-  offset,
-  onChange,
-}: {
-  total: number
-  limit: number
-  offset: number
-  onChange: (offset: number) => void
-}) {
-  const { t } = useI18n()
-  if (total <= limit) return null
-
-  const from = offset + 1
-  const to = Math.min(offset + limit, total)
-  const noun = plural(total, t('pagination.task'), t('pagination.tasks'))
-
-  return (
-    <nav className="pagination" aria-label={t('pagination.task')}>
-      <button
-        type="button"
-        className="button button--ghost"
-        disabled={offset === 0}
-        onClick={() => onChange(Math.max(0, offset - limit))}
-      >
-        {t('pagination.previous')}
-      </button>
-      <span className="muted">{t('pagination.showing', { from, to, total: noun })}</span>
-      <button
-        type="button"
-        className="button button--ghost"
-        disabled={offset + limit >= total}
-        onClick={() => onChange(offset + limit)}
-      >
-        {t('pagination.next')}
-      </button>
-    </nav>
-  )
-}

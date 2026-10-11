@@ -1,6 +1,6 @@
-import { formatDateTime } from '../../../core/format'
-import { useI18n } from '../../../core/i18n'
-import type { ActivityItem } from '../types'
+import { formatDateTime } from '../format'
+import { useI18n } from '../i18n'
+import type { ActivityItem } from './api'
 
 /**
  * The Activity feed.
@@ -13,6 +13,12 @@ import type { ActivityItem } from '../types'
  * The feed also answers *who*, which the acceptance criteria require: `actor_id`
  * arrives as a uuid, so the name is resolved against the organization roster the
  * caller already fetched rather than by asking the API per row.
+ *
+ * It lives in Core rather than in the tasks module because three of its four
+ * callers do not concern tasks: a person's journal, a project, the project list.
+ * While it sat in the module, those Core screens reached across into a module to
+ * render a list of events that have nothing to do with tasks - the same
+ * dependency, spelled backwards, that `api.ts` had.
  */
 export interface ActivityFeedProps {
   items: ActivityItem[]

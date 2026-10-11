@@ -12,8 +12,9 @@ import { RequiresOrganization } from '../../../core/organizations/RequiresOrgani
 import { useCapabilities } from '../../../core/permissions/capabilities'
 import { projectsApi } from '../../../core/projects/api'
 import type { Project } from '../../../core/projects/api'
-import { activityApi, tasksApi } from '../api'
-import { ActivityFeed } from '../components/ActivityFeed'
+import { activityApi } from '../../../core/activity/api'
+import { tasksApi } from '../api'
+import { ActivityFeed } from '../../../core/activity/ActivityFeed'
 import {
   DueDateBadge,
   PriorityBadge,

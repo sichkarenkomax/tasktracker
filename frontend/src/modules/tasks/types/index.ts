@@ -75,23 +75,6 @@ export interface CommentPage {
   offset: number
 }
 
-export interface ActivityItem {
-  id: string
-  organization_id: string
-  actor_id: string | null
-  action: string
-  entity_type: string | null
-  entity_id: string | null
-  summary: string | null
-  created_at: string
-}
-
-export interface ActivityPage {
-  items: ActivityItem[]
-  total: number
-  limit: number
-  offset: number
-}
 
 export interface TaskCreate {
   title: string
